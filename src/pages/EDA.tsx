@@ -8,6 +8,7 @@ import { Textarea } from "@/components/ui/textarea";
 import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import { useToast } from "@/hooks/use-toast";
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { 
   Play, 
   Database, 
@@ -15,52 +16,173 @@ import {
   FileText, 
   Settings,
   CheckCircle,
-  Clock,
-  Upload
+  Clock
 } from "lucide-react";
+
+interface EDAJob {
+  id: string;
+  status: 'running' | 'completed';
+  duration?: string; // populated on completion
+  features?: number;
+  rows?: number;
+  completedAt?: string;
+}
 
 export default function EDA() {
   const { toast } = useToast();
   const [isRunning, setIsRunning] = useState(false);
-  const [jobResults, setJobResults] = useState<any>(null);
+  const [jobs, setJobs] = useState<EDAJob[]>([
+    {
+      id: 'eda-1732383000000',
+      status: 'completed',
+      duration: '1m 12s',
+      features: 18,
+      rows: 82000,
+      completedAt: new Date(Date.now() - 86400000).toISOString()
+    },
+    {
+      id: 'eda-1732469400000',
+      status: 'completed',
+      duration: '2m 05s',
+      features: 24,
+      rows: 150000,
+      completedAt: new Date(Date.now() - 3600000).toISOString()
+    },
+    {
+      id: 'eda-1732471200000',
+      status: 'completed',
+      duration: '3m 44s',
+      features: 30,
+      rows: 250000,
+      completedAt: new Date(Date.now() - 1800000).toISOString()
+    }
+  ]);
+  const [selectedJob, setSelectedJob] = useState<EDAJob | null>(null);
+  const [showConfig, setShowConfig] = useState(false);
+
+  const handleCreateNewJob = () => {
+    // Reset selection and show configuration
+    setSelectedJob(null);
+    setShowConfig(true);
+    requestAnimationFrame(() => {
+      const el = document.getElementById('eda-config');
+      if (el) el.scrollIntoView({ behavior: 'smooth' });
+    });
+  };
 
   const handleRunEDA = () => {
+    const newJob: EDAJob = {
+      id: 'eda-' + Date.now(),
+      status: 'running'
+    };
+    setJobs(prev => [newJob, ...prev]);
+    setSelectedJob(newJob);
     setIsRunning(true);
     toast({
-      title: "EDA Job Started",
-      description: "Your exploratory data analysis job is now running...",
+      title: 'EDA Job Started',
+      description: 'Your exploratory data analysis job is now running...'
     });
 
-    // Simulate job completion
+    // Simulate completion
     setTimeout(() => {
       setIsRunning(false);
-      setJobResults({
-        id: "eda-" + Date.now(),
-        status: "completed",
-        duration: "2m 34s",
+      setJobs(prev => prev.map(j => j.id === newJob.id ? {
+        ...j,
+        status: 'completed',
+        duration: '2m 34s',
         features: 24,
         rows: 150000,
         completedAt: new Date().toISOString()
-      });
+      } : j));
+      setSelectedJob(j => j && j.id === newJob.id ? {
+        ...j,
+        status: 'completed',
+        duration: '2m 34s',
+        features: 24,
+        rows: 150000,
+        completedAt: new Date().toISOString()
+      } : j);
       toast({
-        title: "EDA Job Completed",
-        description: "Your analysis is ready for review.",
+        title: 'EDA Job Completed',
+        description: 'Your analysis is ready for review.'
       });
     }, 3000);
   };
 
+  const handleRowSelect = (job: EDAJob) => {
+    if (job.status === 'completed') {
+      setSelectedJob(job);
+      requestAnimationFrame(() => {
+        const el = document.getElementById('eda-results');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      });
+    }
+  };
+
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-3xl font-bold text-foreground mb-2">Exploratory Data Analysis</h1>
-        <p className="text-muted-foreground">
-          Configure and run comprehensive data analysis jobs
-        </p>
+      <div className="flex flex-col sm:flex-row items-start sm:items-center justify-between gap-4">
+        <div>
+          <h1 className="text-3xl font-bold text-foreground mb-2">Exploratory Data Analysis</h1>
+          <p className="text-muted-foreground">Configure and run comprehensive data analysis jobs</p>
+        </div>
+        <Button onClick={handleCreateNewJob} variant="default">
+          Create new EDA Job
+        </Button>
       </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      {/* Jobs List */}
+      <Card className="bg-card border-border">
+        <CardHeader>
+          <CardTitle className="text-lg">EDA</CardTitle>
+          <CardDescription>Previous analysis jobs</CardDescription>
+        </CardHeader>
+        <CardContent>
+          {jobs.length === 0 ? (
+            <p className="text-sm text-muted-foreground">No EDA jobs yet. Configure and run your first job below.</p>
+          ) : (
+            <div className="overflow-x-auto">
+              <Table>
+                <TableHeader>
+                  <TableRow>
+                    <TableHead>ID</TableHead>
+                    <TableHead>Status</TableHead>
+                    <TableHead>Duration</TableHead>
+                    <TableHead>Features</TableHead>
+                    <TableHead>Rows</TableHead>
+                    <TableHead>Completed</TableHead>
+                  </TableRow>
+                </TableHeader>
+                <TableBody>
+                  {jobs.map(job => (
+                    <TableRow
+                      key={job.id}
+                      className={(selectedJob?.id === job.id ? 'bg-muted/40 ' : '') + (job.status === 'completed' ? 'cursor-pointer hover:bg-muted/50' : 'opacity-60')}
+                      onClick={() => handleRowSelect(job)}
+                    >
+                      <TableCell className="font-mono text-xs">{job.id}</TableCell>
+                      <TableCell>
+                        <Badge variant={job.status === 'completed' ? 'default' : 'secondary'}>
+                          {job.status === 'running' ? 'Running' : 'Completed'}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{job.duration || '-'}</TableCell>
+                      <TableCell>{job.features ?? '-'}</TableCell>
+                      <TableCell>{job.rows ? job.rows.toLocaleString() : '-'}</TableCell>
+                      <TableCell>{job.completedAt ? new Date(job.completedAt).toLocaleTimeString() : '-'}</TableCell>
+                    </TableRow>
+                  ))}
+                </TableBody>
+              </Table>
+            </div>
+          )}
+        </CardContent>
+      </Card>
+
+  {showConfig && !(selectedJob && selectedJob.status === 'completed') && (
+  <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* EDA Configuration */}
-        <Card className="lg:col-span-2 bg-card border-border">
+  <Card id="eda-config" className="lg:col-span-2 bg-card border-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <Settings className="h-5 w-5 text-primary" />
@@ -187,83 +309,20 @@ export default function EDA() {
           </CardContent>
         </Card>
 
-        {/* Job Status & Quick Actions */}
-        <div className="space-y-6">
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="text-lg">Job Status</CardTitle>
-            </CardHeader>
-            <CardContent>
-              {isRunning ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <Clock className="h-4 w-4 text-primary animate-spin" />
-                    <span className="text-sm">Running...</span>
-                  </div>
-                  <div className="w-full bg-muted rounded-full h-2">
-                    <div className="bg-primary h-2 rounded-full animate-pulse" style={{ width: '60%' }}></div>
-                  </div>
-                  <p className="text-xs text-muted-foreground">Analyzing data patterns and generating insights</p>
-                </div>
-              ) : jobResults ? (
-                <div className="space-y-4">
-                  <div className="flex items-center gap-2">
-                    <CheckCircle className="h-4 w-4 text-success" />
-                    <span className="text-sm font-medium">Completed</span>
-                  </div>
-                  <div className="space-y-2 text-sm">
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Duration:</span>
-                      <span>{jobResults.duration}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Features:</span>
-                      <span>{jobResults.features}</span>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-muted-foreground">Rows:</span>
-                      <span>{jobResults.rows.toLocaleString()}</span>
-                    </div>
-                  </div>
-                </div>
-              ) : (
-                <p className="text-sm text-muted-foreground">No active jobs</p>
-              )}
-            </CardContent>
-          </Card>
-
-          <Card className="bg-card border-border">
-            <CardHeader>
-              <CardTitle className="text-lg">Quick Actions</CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <Button variant="outline" className="w-full justify-start" size="sm">
-                <Upload className="h-4 w-4 mr-2" />
-                Upload Dataset
-              </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
-                <FileText className="h-4 w-4 mr-2" />
-                View Templates
-              </Button>
-              <Button variant="outline" className="w-full justify-start" size="sm">
-                <Database className="h-4 w-4 mr-2" />
-                Data Sources
-              </Button>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+  {/* Removed Quick Actions per requirement */}
+  </div>
+  )}
 
       {/* Results Section */}
-      {jobResults && (
-        <Card className="bg-card border-border">
+  {selectedJob && selectedJob.status === 'completed' && (
+        <Card id="eda-results" className="bg-card border-border">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
               <FileText className="h-5 w-5 text-primary" />
               EDA Results
             </CardTitle>
             <CardDescription>
-              Analysis completed on {new Date(jobResults.completedAt).toLocaleString()}
+      Analysis completed on {selectedJob.completedAt ? new Date(selectedJob.completedAt).toLocaleString() : ''}
             </CardDescription>
           </CardHeader>
           <CardContent>
@@ -272,7 +331,7 @@ export default function EDA() {
               <div className="flex items-center justify-between mb-4">
                 <div>
                   <h2 className="text-2xl font-bold text-foreground">Pandas Profiling Report</h2>
-                  <p className="text-muted-foreground">Generated on {new Date(jobResults.completedAt).toLocaleDateString()}</p>
+                  <p className="text-muted-foreground">Generated on {selectedJob.completedAt ? new Date(selectedJob.completedAt).toLocaleDateString() : ''}</p>
                 </div>
                 <Badge variant="default" className="text-lg px-4 py-2">Complete</Badge>
               </div>
@@ -280,11 +339,11 @@ export default function EDA() {
               {/* Dataset Overview */}
               <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                 <div className="text-center">
-                  <div className="font-semibold text-2xl text-primary">{jobResults.rows.toLocaleString()}</div>
+                  <div className="font-semibold text-2xl text-primary">{selectedJob.rows?.toLocaleString()}</div>
                   <div className="text-muted-foreground">Observations</div>
                 </div>
                 <div className="text-center">
-                  <div className="font-semibold text-2xl text-primary">{jobResults.features}</div>
+                  <div className="font-semibold text-2xl text-primary">{selectedJob.features}</div>
                   <div className="text-muted-foreground">Variables</div>
                 </div>
                 <div className="text-center">

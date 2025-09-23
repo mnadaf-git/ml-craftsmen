@@ -205,24 +205,14 @@ export default function ProjectModels() {
                 Created on {new Date(model.createdAt).toLocaleDateString()}
               </div>
               
-              <div className="flex gap-2">
-                <Button 
-                  variant="outline" 
-                  size="sm" 
-                  className="flex-1"
-                >
-                  <Settings className="h-4 w-4 mr-2" />
-                  Configure
-                </Button>
-                <Button 
-                  size="sm" 
-                  className="flex-1"
-                  onClick={() => handleNewExperiment(model.id)}
-                >
-                  <Play className="h-4 w-4 mr-2" />
-                  New Experiment
-                </Button>
-              </div>
+              <Button 
+                size="sm" 
+                className="w-full"
+                onClick={() => handleNewExperiment(model.id)}
+              >
+                <Play className="h-4 w-4 mr-2" />
+                New Experiment
+              </Button>
             </CardContent>
           </Card>
         ))}
