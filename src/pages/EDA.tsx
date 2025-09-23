@@ -146,9 +146,9 @@ export default function EDA() {
                       <SelectValue placeholder="Select type" />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="comprehensive">Comprehensive</SelectItem>
-                      <SelectItem value="statistical">Statistical Only</SelectItem>
-                      <SelectItem value="visual">Visual Only</SelectItem>
+                      <SelectItem value="sweetviz">Sweetviz</SelectItem>
+                      <SelectItem value="pandas-profiling">Pandas profiling</SelectItem>
+                      <SelectItem value="data-profiling">Data profiling</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -267,32 +267,171 @@ export default function EDA() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
-              <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                <h4 className="font-medium text-foreground mb-2">Data Quality</h4>
-                <Badge variant="default">98.5% Complete</Badge>
-                <p className="text-xs text-muted-foreground mt-1">Missing values: 2.3k (1.5%)</p>
+            {/* Report Header - Pandas Profiling Style */}
+            <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 rounded-lg border border-border/50 mb-6">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <h2 className="text-2xl font-bold text-foreground">Pandas Profiling Report</h2>
+                  <p className="text-muted-foreground">Generated on {new Date(jobResults.completedAt).toLocaleDateString()}</p>
+                </div>
+                <Badge variant="default" className="text-lg px-4 py-2">Complete</Badge>
               </div>
-              <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                <h4 className="font-medium text-foreground mb-2">Correlations</h4>
-                <Badge variant="secondary">5 Strong</Badge>
-                <p className="text-xs text-muted-foreground mt-1">Age-Income: 0.82</p>
+              
+              {/* Dataset Overview */}
+              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                <div className="text-center">
+                  <div className="font-semibold text-2xl text-primary">{jobResults.rows.toLocaleString()}</div>
+                  <div className="text-muted-foreground">Observations</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-2xl text-primary">{jobResults.features}</div>
+                  <div className="text-muted-foreground">Variables</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-2xl text-warning">2.3k</div>
+                  <div className="text-muted-foreground">Missing cells</div>
+                </div>
+                <div className="text-center">
+                  <div className="font-semibold text-2xl text-destructive">247</div>
+                  <div className="text-muted-foreground">Duplicate rows</div>
+                </div>
               </div>
-              <div className="p-4 rounded-lg bg-muted/30 border border-border/50">
-                <h4 className="font-medium text-foreground mb-2">Outliers</h4>
-                <Badge variant="outline">247 Detected</Badge>
-                <p className="text-xs text-muted-foreground mt-1">Income field: 89 outliers</p>
+            </div>
+
+            {/* Analysis Sections */}
+            <div className="space-y-6">
+              {/* Overview Section */}
+              <div className="border border-border rounded-lg">
+                <div className="bg-muted/30 px-4 py-3 border-b border-border">
+                  <h3 className="font-semibold flex items-center gap-2">
+                    <BarChart3 className="h-4 w-4" />
+                    Overview
+                  </h3>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div className="p-4 rounded-lg bg-muted/20">
+                      <h4 className="font-medium text-foreground mb-2">Data Quality</h4>
+                      <div className="space-y-2">
+                        <div className="flex justify-between text-sm">
+                          <span>Complete cells</span>
+                          <span className="text-success">98.5%</span>
+                        </div>
+                        <div className="flex justify-between text-sm">
+                          <span>Missing cells</span>
+                          <span className="text-warning">1.5%</span>
+                        </div>
+                        <div className="w-full bg-muted rounded-full h-2">
+                          <div className="bg-success h-2 rounded-full" style={{width: '98.5%'}}></div>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4 rounded-lg bg-muted/20">
+                      <h4 className="font-medium text-foreground mb-2">Variable Types</h4>
+                      <div className="space-y-2 text-sm">
+                        <div className="flex justify-between">
+                          <span>Numeric</span>
+                          <Badge variant="secondary">12</Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Categorical</span>
+                          <Badge variant="secondary">8</Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>Boolean</span>
+                          <Badge variant="secondary">2</Badge>
+                        </div>
+                        <div className="flex justify-between">
+                          <span>DateTime</span>
+                          <Badge variant="secondary">2</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    
+                    <div className="p-4 rounded-lg bg-muted/20">
+                      <h4 className="font-medium text-foreground mb-2">Alerts</h4>
+                      <div className="space-y-2">
+                        <div className="flex items-center gap-2 text-sm text-warning">
+                          <div className="w-2 h-2 bg-warning rounded-full"></div>
+                          <span>High correlation detected</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-destructive">
+                          <div className="w-2 h-2 bg-destructive rounded-full"></div>
+                          <span>Outliers found in income</span>
+                        </div>
+                        <div className="flex items-center gap-2 text-sm text-info">
+                          <div className="w-2 h-2 bg-info rounded-full"></div>
+                          <span>Skewed distributions</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Variables Section */}
+              <div className="border border-border rounded-lg">
+                <div className="bg-muted/30 px-4 py-3 border-b border-border">
+                  <h3 className="font-semibold">Variables</h3>
+                </div>
+                <div className="p-4">
+                  <div className="space-y-3">
+                    {['age', 'income', 'location', 'tenure'].map((variable) => (
+                      <div key={variable} className="flex items-center justify-between p-3 border border-border/50 rounded-lg hover:bg-muted/20">
+                        <div className="flex items-center gap-3">
+                          <Badge variant="outline" className="text-xs">NUM</Badge>
+                          <span className="font-medium">{variable}</span>
+                        </div>
+                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
+                          <span>Distinct: {Math.floor(Math.random() * 1000)}</span>
+                          <span>Missing: {Math.floor(Math.random() * 5)}%</span>
+                          <Button variant="ghost" size="sm">
+                            <BarChart3 className="h-3 w-3" />
+                          </Button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              </div>
+
+              {/* Correlations Section */}
+              <div className="border border-border rounded-lg">
+                <div className="bg-muted/30 px-4 py-3 border-b border-border">
+                  <h3 className="font-semibold">Correlations</h3>
+                </div>
+                <div className="p-4">
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div className="space-y-2">
+                      <h4 className="font-medium">Highly correlated pairs</h4>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between p-2 rounded bg-muted/20">
+                          <span>age ↔ income</span>
+                          <Badge variant="destructive">0.82</Badge>
+                        </div>
+                        <div className="flex justify-between p-2 rounded bg-muted/20">
+                          <span>tenure ↔ purchases</span>
+                          <Badge variant="secondary">0.75</Badge>
+                        </div>
+                      </div>
+                    </div>
+                    <div className="aspect-square bg-muted/20 rounded-lg flex items-center justify-center text-muted-foreground">
+                      Correlation Heatmap
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
             
-            <div className="space-y-4">
-              <Button variant="secondary" className="mr-2">
+            <div className="flex gap-4 pt-6">
+              <Button variant="secondary">
                 <FileText className="h-4 w-4 mr-2" />
-                Download Report
+                Download Full Report
               </Button>
               <Button variant="outline">
                 <BarChart3 className="h-4 w-4 mr-2" />
-                View Visualizations
+                Export Visualizations
               </Button>
             </div>
           </CardContent>
