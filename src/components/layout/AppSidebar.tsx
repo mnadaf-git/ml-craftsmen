@@ -23,16 +23,16 @@ import {
 
 const navigationItems = [
   {
-    title: "Projects",
-    url: "/projects",
-    icon: Database,
-    description: "Project Management"
-  },
-  {
     title: "EDA Jobs",
     url: "/eda",
     icon: BarChart3,
     description: "Exploratory Data Analysis"
+  },
+  {
+    title: "Projects",
+    url: "/projects",
+    icon: Database,
+    description: "Project Management"
   },
   {
     title: "Experiments",

@@ -10,7 +10,6 @@ import ProjectModels from "./pages/ProjectModels";
 import EDA from "./pages/EDA";
 import Experiments from "./pages/Experiments";
 import NewExperiment from "./pages/NewExperiment";
-import ExperimentSummary from "./pages/ExperimentSummary";
 import ExperimentComparison from "./pages/ExperimentComparison";
 import Observability from "./pages/Observability";
 import NotFound from "./pages/NotFound";
@@ -31,7 +30,6 @@ const App = () => (
             <Route path="/eda" element={<EDA />} />
             <Route path="/experiments" element={<Experiments />} />
             <Route path="/experiments/new" element={<NewExperiment />} />
-            <Route path="/experiments/summary" element={<ExperimentSummary />} />
             <Route path="/experiments/compare" element={<ExperimentComparison />} />
             <Route path="/observability" element={<Observability />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
