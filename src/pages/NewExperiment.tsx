@@ -46,7 +46,22 @@ const mockDatasetSample = [
   { id: 2, age: 42, income: 85000, credit_score: 680, amount: 89.99, merchant: "Gas", target: 1 },
   { id: 3, age: 28, income: 45000, credit_score: 750, amount: 245.00, merchant: "Restaurant", target: 0 },
   { id: 4, age: 51, income: 95000, credit_score: 690, amount: 15.99, merchant: "Coffee", target: 0 },
-  { id: 5, age: 39, income: 72000, credit_score: 710, amount: 567.88, merchant: "Electronics", target: 1 }
+  { id: 5, age: 39, income: 72000, credit_score: 710, amount: 567.88, merchant: "Electronics", target: 1 },
+  { id: 6, age: 31, income: 54000, credit_score: 705, amount: 78.12, merchant: "Grocery", target: 0 },
+  { id: 7, age: 46, income: 88000, credit_score: 665, amount: 312.44, merchant: "Travel", target: 1 },
+  { id: 8, age: 29, income: 47000, credit_score: 735, amount: 42.60, merchant: "Coffee", target: 0 },
+  { id: 9, age: 57, income: 105000, credit_score: 700, amount: 1299.00, merchant: "Electronics", target: 1 },
+  { id: 10, age: 33, income: 61000, credit_score: 725, amount: 5.49, merchant: "Gas", target: 0 },
+  { id: 11, age: 45, income: 83000, credit_score: 680, amount: 224.10, merchant: "Restaurant", target: 0 },
+  { id: 12, age: 27, income: 43000, credit_score: 760, amount: 19.99, merchant: "Coffee", target: 0 },
+  { id: 13, age: 52, income: 98000, credit_score: 695, amount: 76.34, merchant: "Grocery", target: 0 },
+  { id: 14, age: 38, income: 70000, credit_score: 715, amount: 854.22, merchant: "Electronics", target: 1 },
+  { id: 15, age: 41, income: 82000, credit_score: 705, amount: 63.75, merchant: "Travel", target: 0 },
+  { id: 16, age: 36, income: 66000, credit_score: 740, amount: 145.00, merchant: "Restaurant", target: 0 },
+  { id: 17, age: 48, income: 91000, credit_score: 690, amount: 300.00, merchant: "Travel", target: 1 },
+  { id: 18, age: 34, income: 64000, credit_score: 730, amount: 27.45, merchant: "Coffee", target: 0 },
+  { id: 19, age: 53, income: 102000, credit_score: 685, amount: 420.00, merchant: "Electronics", target: 1 },
+  { id: 20, age: 30, income: 50000, credit_score: 745, amount: 88.10, merchant: "Grocery", target: 0 }
 ];
 
 export default function NewExperiment() {
@@ -56,6 +71,8 @@ export default function NewExperiment() {
 
   const [selectedProject, setSelectedProject] = useState(searchParams.get('projectId') || '');
   const [selectedModel, setSelectedModel] = useState(searchParams.get('modelId') || '');
+  const sourceInstanceParam = searchParams.get('sourceInstance') || '';
+  const [sourceInstance] = useState(sourceInstanceParam);
   const [labelSourceTable, setLabelSourceTable] = useState('');
   const [targetLabelColumn, setTargetLabelColumn] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
@@ -90,6 +107,12 @@ export default function NewExperiment() {
   const edaClearAll = () => { setEdaSelectedFeatures([]); setEdaAvailableSelection([]); setEdaChosenSelection([]); };
 
   const openEdaOverlay = (mode: 'history' | 'run') => {
+    // When entering run mode, pre-populate the EDA feature selection with the experiment's selected features
+    if (mode === 'run') {
+      setEdaSelectedFeatures([...selectedFeatures]);
+      setEdaAvailableSelection([]);
+      setEdaChosenSelection([]);
+    }
     setEdaOverlayMode(mode);
     setEdaOverlayOpen(true);
   };
@@ -219,6 +242,10 @@ export default function NewExperiment() {
               </Select>
             </div>
             <div>
+              <Label>Source Instance</Label>
+              <Input value={sourceInstance || 'Not specified'} disabled readOnly className="bg-muted/50" />
+            </div>
+            <div>
               <Label>Source Table</Label>
               <Select value={labelSourceTable} onValueChange={v => { setLabelSourceTable(v); setTargetLabelColumn(''); }}>
                 <SelectTrigger><SelectValue placeholder="Select table" /></SelectTrigger>
@@ -273,7 +300,7 @@ export default function NewExperiment() {
               </div>
               <div className="flex justify-end gap-2 pt-2">
                 <Button variant="outline" size="sm" onClick={() => openEdaOverlay('history')}>EDA History</Button>
-                <Button variant="default" size="sm" onClick={() => openEdaOverlay('run')}>Run EDA</Button>
+                <Button variant="default" size="sm" onClick={() => openEdaOverlay('run')} disabled={!selectedFeatures.length}>Run EDA</Button>
               </div>
             </div>
 
@@ -300,7 +327,7 @@ export default function NewExperiment() {
             <CardContent>
               <div className="space-y-4">
                 <div className="text-sm text-muted-foreground">Dataset contains {mockDatasetSample.length} rows with {Object.keys(mockDatasetSample[0]).length} features</div>
-                <div className="overflow-x-auto">
+                <div className="overflow-auto max-h-96 border rounded-md">
                   <Table>
                     <TableHeader>
                       <TableRow>

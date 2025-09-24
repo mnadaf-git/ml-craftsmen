@@ -12,6 +12,8 @@ import Experiments from "./pages/Experiments";
 import NewExperiment from "./pages/NewExperiment";
 import ExperimentComparison from "./pages/ExperimentComparison";
 import Observability from "./pages/Observability";
+import TransformedTables from "./pages/TransformedTables";
+import FeatureStore from "./pages/FeatureStore";
 import NotFound from "./pages/NotFound";
 
 const queryClient = new QueryClient();
@@ -26,6 +28,8 @@ const App = () => (
           <Routes>
             <Route path="/" element={<Dashboard />} />
             <Route path="/projects" element={<Projects />} />
+            <Route path="/transformed-tables" element={<TransformedTables />} />
+            <Route path="/feature-views" element={<FeatureStore />} />
             <Route path="/projects/:projectId/models" element={<ProjectModels />} />
             <Route path="/eda" element={<EDA />} />
             <Route path="/experiments" element={<Experiments />} />

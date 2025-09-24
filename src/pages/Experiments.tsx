@@ -145,10 +145,6 @@ export default function Experiments() {
         {/* Experiments List */}
         <div className="lg:col-span-2">
           <Card>
-            <CardHeader>
-              <CardTitle>Experiments</CardTitle>
-              <CardDescription>All experiments with their current status</CardDescription>
-            </CardHeader>
             <CardContent>
               <Table>
                 <TableHeader>

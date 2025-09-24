@@ -5,7 +5,9 @@ import {
   Database,
   Activity,
   ChevronRight,
-  Sparkles
+  Sparkles,
+  Table2,
+  Boxes
 } from "lucide-react";
 
 import {
@@ -21,8 +23,20 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// Order updated: Projects first, EDA second, then Experiments, Observability
+// Order updated: Transformed Tables, Feature Store, Projects, EDA, Experiments, Observability
 const navigationItems = [
+  {
+    title: "Transformed Tables",
+    url: "/transformed-tables",
+    icon: Table2,
+    description: "Materialized & processed tables"
+  },
+  {
+    title: "Feature Views",
+    url: "/feature-views",
+    icon: Boxes,
+    description: "Reusable feature views"
+  },
   {
     title: "Projects",
     url: "/projects",
