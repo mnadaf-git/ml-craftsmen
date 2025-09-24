@@ -59,11 +59,40 @@ export default function EDA() {
   ]);
   const [selectedJob, setSelectedJob] = useState<EDAJob | null>(null);
   const [showConfig, setShowConfig] = useState(false);
+  const [reportLoading, setReportLoading] = useState(false);
+  // Feature selection (list builder) state
+  const baseFeaturePool = ['age', 'income', 'location', 'tenure', 'purchases', 'category', 'rating', 'last_active'];
+  const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
+  const [availableSelection, setAvailableSelection] = useState<string[]>([]); // features currently highlighted on left
+  const [chosenSelection, setChosenSelection] = useState<string[]>([]); // features currently highlighted on right
+  const availableFeatures = baseFeaturePool.filter(f => !selectedFeatures.includes(f));
+
+  const toggleAvailable = (f: string) => setAvailableSelection(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]);
+  const toggleChosen = (f: string) => setChosenSelection(prev => prev.includes(f) ? prev.filter(x => x !== f) : [...prev, f]);
+  const addSelected = () => {
+    if (availableSelection.length) {
+      setSelectedFeatures(prev => [...prev, ...availableSelection]);
+      setAvailableSelection([]);
+    }
+  };
+  const removeSelected = () => {
+    if (chosenSelection.length) {
+      setSelectedFeatures(prev => prev.filter(f => !chosenSelection.includes(f)));
+      setChosenSelection([]);
+    }
+  };
+  const clearAllFeatures = () => {
+    setSelectedFeatures([]);
+    setAvailableSelection([]);
+    setChosenSelection([]);
+  };
 
   const handleCreateNewJob = () => {
     // Reset selection and show configuration
     setSelectedJob(null);
     setShowConfig(true);
+    // Reset feature selections for fresh job config
+    clearAllFeatures();
     requestAnimationFrame(() => {
       const el = document.getElementById('eda-config');
       if (el) el.scrollIntoView({ behavior: 'smooth' });
@@ -71,6 +100,10 @@ export default function EDA() {
   };
 
   const handleRunEDA = () => {
+    if (!selectedFeatures.length) {
+      toast({ title: 'Select Features', description: 'Please select at least one feature before running the EDA job.', variant: 'destructive' });
+      return;
+    }
     const newJob: EDAJob = {
       id: 'eda-' + Date.now(),
       status: 'running'
@@ -90,18 +123,33 @@ export default function EDA() {
         ...j,
         status: 'completed',
         duration: '2m 34s',
-        features: 24,
+  features: selectedFeatures.length || 0,
         rows: 150000,
         completedAt: new Date().toISOString()
       } : j));
-      setSelectedJob(j => j && j.id === newJob.id ? {
-        ...j,
-        status: 'completed',
-        duration: '2m 34s',
-        features: 24,
-        rows: 150000,
-        completedAt: new Date().toISOString()
-      } : j);
+      // Auto-open the just-completed job's report
+      setSelectedJob(j => {
+        if (j && j.id === newJob.id) {
+          const completed = {
+            ...j,
+            status: 'completed',
+            duration: '2m 34s',
+            features: selectedFeatures.length || 0,
+            rows: 150000,
+            completedAt: new Date().toISOString()
+          } as EDAJob;
+          // Prepare to show report
+          setShowConfig(false);
+          setReportLoading(true);
+          // Defer scroll until DOM updates with results
+          requestAnimationFrame(() => {
+            const el = document.getElementById('eda-results');
+            if (el) el.scrollIntoView({ behavior: 'smooth' });
+          });
+          return completed;
+        }
+        return j;
+      });
       toast({
         title: 'EDA Job Completed',
         description: 'Your analysis is ready for review.'
@@ -111,6 +159,8 @@ export default function EDA() {
 
   const handleRowSelect = (job: EDAJob) => {
     if (job.status === 'completed') {
+      setShowConfig(false);
+      setReportLoading(true);
       setSelectedJob(job);
       requestAnimationFrame(() => {
         const el = document.getElementById('eda-results');
@@ -235,15 +285,47 @@ export default function EDA() {
             <div className="space-y-4">
               <Label className="text-base font-medium flex items-center gap-2">
                 <BarChart3 className="h-4 w-4" />
-                Feature Selection
+                Features to Include
               </Label>
-              <div className="grid grid-cols-3 gap-2">
-                {['age', 'income', 'location', 'tenure', 'purchases', 'category', 'rating', 'last_active'].map((feature) => (
-                  <label key={feature} className="flex items-center space-x-2 p-2 rounded border border-border hover:bg-muted/50 cursor-pointer">
-                    <input type="checkbox" defaultChecked className="rounded" />
-                    <span className="text-sm">{feature}</span>
-                  </label>
-                ))}
+              <div className="grid md:grid-cols-3 gap-4">
+                {/* Available Features */}
+                <div className="border rounded-md p-3 h-64 flex flex-col">
+                  <div className="font-medium text-sm mb-2">Available Features</div>
+                  <div className="flex-1 overflow-auto space-y-1 text-sm">
+                    {availableFeatures.map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => toggleAvailable(f)}
+                        className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${availableSelection.includes(f) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}
+                      >{f}</button>
+                    ))}
+                    {!availableFeatures.length && <div className="text-muted-foreground text-xs">None</div>}
+                  </div>
+                  <div className="pt-2 text-[10px] text-muted-foreground">Click to select</div>
+                </div>
+                {/* Action Buttons */}
+                <div className="flex flex-col justify-center items-center gap-2">
+                  <Button variant="secondary" size="sm" onClick={addSelected} disabled={!availableSelection.length}>Add →</Button>
+                  <Button variant="secondary" size="sm" onClick={removeSelected} disabled={!chosenSelection.length}>← Remove</Button>
+                  <Button variant="ghost" size="sm" onClick={clearAllFeatures} disabled={!selectedFeatures.length}>Clear All</Button>
+                </div>
+                {/* Selected Features */}
+                <div className="border rounded-md p-3 h-64 flex flex-col">
+                  <div className="font-medium text-sm mb-2">Selected Features ({selectedFeatures.length})</div>
+                  <div className="flex-1 overflow-auto space-y-1 text-sm">
+                    {selectedFeatures.map(f => (
+                      <button
+                        key={f}
+                        type="button"
+                        onClick={() => toggleChosen(f)}
+                        className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${chosenSelection.includes(f) ? 'bg-destructive text-destructive-foreground' : 'hover:bg-muted'}`}
+                      >{f}</button>
+                    ))}
+                    {!selectedFeatures.length && <div className="text-muted-foreground text-xs">None selected</div>}
+                  </div>
+                  <div className="pt-2 text-[10px] text-muted-foreground">Click to mark for removal</div>
+                </div>
               </div>
             </div>
 
@@ -289,7 +371,7 @@ export default function EDA() {
             <div className="pt-4">
               <Button 
                 onClick={handleRunEDA}
-                disabled={isRunning}
+                disabled={isRunning || !selectedFeatures.length}
                 className="w-full"
                 size="lg"
               >
@@ -305,6 +387,7 @@ export default function EDA() {
                   </>
                 )}
               </Button>
+              <p className="text-xs text-muted-foreground mt-2">{!selectedFeatures.length ? 'Select at least one feature to enable the EDA job.' : 'EDA will analyze only the selected features.'}</p>
             </div>
           </CardContent>
         </Card>
@@ -326,164 +409,27 @@ export default function EDA() {
             </CardDescription>
           </CardHeader>
           <CardContent>
-            {/* Report Header - Pandas Profiling Style */}
-            <div className="bg-gradient-to-r from-primary/10 to-secondary/10 p-6 rounded-lg border border-border/50 mb-6">
-              <div className="flex items-center justify-between mb-4">
-                <div>
-                  <h2 className="text-2xl font-bold text-foreground">Pandas Profiling Report</h2>
-                  <p className="text-muted-foreground">Generated on {selectedJob.completedAt ? new Date(selectedJob.completedAt).toLocaleDateString() : ''}</p>
+            {/* Embedded static HTML report */}
+            <div className="mb-8 border border-border rounded-lg overflow-hidden relative">
+              {reportLoading && (
+                <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm text-xs">
+                  <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                  Loading report...
                 </div>
-                <Badge variant="default" className="text-lg px-4 py-2">Complete</Badge>
+              )}
+              <div className="px-4 py-2 bg-muted/40 border-b border-border flex items-center justify-between">
+                <span className="text-sm font-medium">Interactive Report</span>
+                <span className="text-xs text-muted-foreground">Loaded from /reports/pandas_profiling_report.html</span>
               </div>
-              
-              {/* Dataset Overview */}
-              <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
-                <div className="text-center">
-                  <div className="font-semibold text-2xl text-primary">{selectedJob.rows?.toLocaleString()}</div>
-                  <div className="text-muted-foreground">Observations</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-semibold text-2xl text-primary">{selectedJob.features}</div>
-                  <div className="text-muted-foreground">Variables</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-semibold text-2xl text-warning">2.3k</div>
-                  <div className="text-muted-foreground">Missing cells</div>
-                </div>
-                <div className="text-center">
-                  <div className="font-semibold text-2xl text-destructive">247</div>
-                  <div className="text-muted-foreground">Duplicate rows</div>
-                </div>
-              </div>
+              <iframe
+                title="EDA Report"
+                key={selectedJob.id}
+                src="/reports/pandas_profiling_report.html"
+                onLoad={() => setReportLoading(false)}
+                className="w-full h-[700px] bg-background"
+              />
             </div>
-
-            {/* Analysis Sections */}
-            <div className="space-y-6">
-              {/* Overview Section */}
-              <div className="border border-border rounded-lg">
-                <div className="bg-muted/30 px-4 py-3 border-b border-border">
-                  <h3 className="font-semibold flex items-center gap-2">
-                    <BarChart3 className="h-4 w-4" />
-                    Overview
-                  </h3>
-                </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                    <div className="p-4 rounded-lg bg-muted/20">
-                      <h4 className="font-medium text-foreground mb-2">Data Quality</h4>
-                      <div className="space-y-2">
-                        <div className="flex justify-between text-sm">
-                          <span>Complete cells</span>
-                          <span className="text-success">98.5%</span>
-                        </div>
-                        <div className="flex justify-between text-sm">
-                          <span>Missing cells</span>
-                          <span className="text-warning">1.5%</span>
-                        </div>
-                        <div className="w-full bg-muted rounded-full h-2">
-                          <div className="bg-success h-2 rounded-full" style={{width: '98.5%'}}></div>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="p-4 rounded-lg bg-muted/20">
-                      <h4 className="font-medium text-foreground mb-2">Variable Types</h4>
-                      <div className="space-y-2 text-sm">
-                        <div className="flex justify-between">
-                          <span>Numeric</span>
-                          <Badge variant="secondary">12</Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Categorical</span>
-                          <Badge variant="secondary">8</Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>Boolean</span>
-                          <Badge variant="secondary">2</Badge>
-                        </div>
-                        <div className="flex justify-between">
-                          <span>DateTime</span>
-                          <Badge variant="secondary">2</Badge>
-                        </div>
-                      </div>
-                    </div>
-                    
-                    <div className="p-4 rounded-lg bg-muted/20">
-                      <h4 className="font-medium text-foreground mb-2">Alerts</h4>
-                      <div className="space-y-2">
-                        <div className="flex items-center gap-2 text-sm text-warning">
-                          <div className="w-2 h-2 bg-warning rounded-full"></div>
-                          <span>High correlation detected</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-destructive">
-                          <div className="w-2 h-2 bg-destructive rounded-full"></div>
-                          <span>Outliers found in income</span>
-                        </div>
-                        <div className="flex items-center gap-2 text-sm text-info">
-                          <div className="w-2 h-2 bg-info rounded-full"></div>
-                          <span>Skewed distributions</span>
-                        </div>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* Variables Section */}
-              <div className="border border-border rounded-lg">
-                <div className="bg-muted/30 px-4 py-3 border-b border-border">
-                  <h3 className="font-semibold">Variables</h3>
-                </div>
-                <div className="p-4">
-                  <div className="space-y-3">
-                    {['age', 'income', 'location', 'tenure'].map((variable) => (
-                      <div key={variable} className="flex items-center justify-between p-3 border border-border/50 rounded-lg hover:bg-muted/20">
-                        <div className="flex items-center gap-3">
-                          <Badge variant="outline" className="text-xs">NUM</Badge>
-                          <span className="font-medium">{variable}</span>
-                        </div>
-                        <div className="flex items-center gap-4 text-sm text-muted-foreground">
-                          <span>Distinct: {Math.floor(Math.random() * 1000)}</span>
-                          <span>Missing: {Math.floor(Math.random() * 5)}%</span>
-                          <Button variant="ghost" size="sm">
-                            <BarChart3 className="h-3 w-3" />
-                          </Button>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              </div>
-
-              {/* Correlations Section */}
-              <div className="border border-border rounded-lg">
-                <div className="bg-muted/30 px-4 py-3 border-b border-border">
-                  <h3 className="font-semibold">Correlations</h3>
-                </div>
-                <div className="p-4">
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                    <div className="space-y-2">
-                      <h4 className="font-medium">Highly correlated pairs</h4>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between p-2 rounded bg-muted/20">
-                          <span>age ↔ income</span>
-                          <Badge variant="destructive">0.82</Badge>
-                        </div>
-                        <div className="flex justify-between p-2 rounded bg-muted/20">
-                          <span>tenure ↔ purchases</span>
-                          <Badge variant="secondary">0.75</Badge>
-                        </div>
-                      </div>
-                    </div>
-                    <div className="aspect-square bg-muted/20 rounded-lg flex items-center justify-center text-muted-foreground">
-                      Correlation Heatmap
-                    </div>
-                  </div>
-                </div>
-              </div>
-            </div>
-            
-            <div className="flex gap-4 pt-6">
+            <div className="flex gap-4 pt-2">
               <Button variant="secondary">
                 <FileText className="h-4 w-4 mr-2" />
                 Download Full Report

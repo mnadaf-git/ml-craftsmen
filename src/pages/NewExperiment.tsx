@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CheckSquare, Play, Database } from "lucide-react";
+import { ArrowLeft, CheckSquare, Play, Database, Clock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
@@ -66,6 +66,64 @@ export default function NewExperiment() {
   const [availableSelection, setAvailableSelection] = useState<string[]>([]);
   const [chosenSelection, setChosenSelection] = useState<string[]>([]);
 
+  // EDA overlay state
+  const [edaOverlayOpen, setEdaOverlayOpen] = useState(false);
+  const [edaOverlayMode, setEdaOverlayMode] = useState<'history' | 'run' | null>(null);
+  // Mock EDA jobs (for history panel)
+  const [edaJobs, setEdaJobs] = useState<Array<{ id: string; status: 'running' | 'completed'; duration?: string; features?: number; rows?: number; completedAt?: string }>>([
+    { id: 'eda-1732383000000', status: 'completed', duration: '1m 12s', features: 18, rows: 82000, completedAt: new Date(Date.now() - 86400000).toISOString() },
+    { id: 'eda-1732469400000', status: 'completed', duration: '2m 05s', features: 24, rows: 150000, completedAt: new Date(Date.now() - 3600000).toISOString() },
+  ]);
+  const [edaIsRunning, setEdaIsRunning] = useState(false);
+  const [edaSelectedFeatures, setEdaSelectedFeatures] = useState<string[]>([]);
+  const [edaAvailableSelection, setEdaAvailableSelection] = useState<string[]>([]);
+  const [edaChosenSelection, setEdaChosenSelection] = useState<string[]>([]);
+  const edaFeaturePool = Array.from(new Set(mockFeatureViews.flatMap(fv => fv.features))).sort();
+  const edaAvailableFeatures = edaFeaturePool.filter(f => !edaSelectedFeatures.includes(f));
+  const [edaSelectedJob, setEdaSelectedJob] = useState<{ id: string; status: 'running' | 'completed'; duration?: string; features?: number; rows?: number; completedAt?: string } | null>(null);
+  const [edaReportLoading, setEdaReportLoading] = useState(false);
+
+  const toggleEdaAvailable = (f: string) => setEdaAvailableSelection(p => p.includes(f) ? p.filter(x => x !== f) : [...p, f]);
+  const toggleEdaChosen = (f: string) => setEdaChosenSelection(p => p.includes(f) ? p.filter(x => x !== f) : [...p, f]);
+  const edaAddSelected = () => { if (edaAvailableSelection.length) { setEdaSelectedFeatures(prev => [...prev, ...edaAvailableSelection]); setEdaAvailableSelection([]);} };
+  const edaRemoveSelected = () => { if (edaChosenSelection.length) { setEdaSelectedFeatures(prev => prev.filter(f => !edaChosenSelection.includes(f))); setEdaChosenSelection([]);} };
+  const edaClearAll = () => { setEdaSelectedFeatures([]); setEdaAvailableSelection([]); setEdaChosenSelection([]); };
+
+  const openEdaOverlay = (mode: 'history' | 'run') => {
+    setEdaOverlayMode(mode);
+    setEdaOverlayOpen(true);
+  };
+  const closeEdaOverlay = () => {
+    setEdaOverlayOpen(false);
+    // do not clear mode instantly to allow exit animation if added later
+    setTimeout(() => setEdaOverlayMode(null), 200);
+  };
+
+  const runInlineEdaJob = () => {
+    if (!edaSelectedFeatures.length) {
+      toast({ title: 'Select Features', description: 'Choose at least one feature for EDA.', variant: 'destructive' });
+      return;
+    }
+    const newJob = { id: 'eda-' + Date.now(), status: 'running' as const };
+    setEdaJobs(prev => [newJob, ...prev]);
+    setEdaIsRunning(true);
+    toast({ title: 'EDA Started', description: 'EDA job is running in background.' });
+    setTimeout(() => {
+      setEdaIsRunning(false);
+      const completedJob = { id: newJob.id, status: 'completed' as const, duration: '2m 10s', features: edaSelectedFeatures.length, rows: 120000, completedAt: new Date().toISOString() };
+      setEdaJobs(prev => prev.map(j => j.id === newJob.id ? completedJob : j));
+      toast({ title: 'EDA Completed', description: 'Opening results...' });
+      setEdaOverlayMode('history');
+      setEdaSelectedJob(completedJob);
+      setEdaReportLoading(true);
+      // scroll after DOM paint
+      requestAnimationFrame(() => {
+        const el = document.getElementById('inline-eda-report');
+        if (el) el.scrollIntoView({ behavior: 'smooth' });
+      });
+    }, 2500);
+  };
+
   const lockedProjectModel = Boolean(searchParams.get('projectId') && searchParams.get('modelId'));
 
   const mockTableColumns: Record<string, string[]> = {
@@ -121,6 +179,7 @@ export default function NewExperiment() {
   }
 
   return (
+    <>
     <div className="space-y-6">
       <div className="flex items-center gap-4">
         <Button variant="ghost" size="sm" onClick={() => navigate('/experiments')}>
@@ -212,6 +271,10 @@ export default function NewExperiment() {
                   <div className="pt-2 text-[10px] text-muted-foreground">Click to mark for removal</div>
                 </div>
               </div>
+              <div className="flex justify-end gap-2 pt-2">
+                <Button variant="outline" size="sm" onClick={() => openEdaOverlay('history')}>EDA History</Button>
+                <Button variant="default" size="sm" onClick={() => openEdaOverlay('run')}>Run EDA</Button>
+              </div>
             </div>
 
             <div>
@@ -293,5 +356,155 @@ export default function NewExperiment() {
         )}
       </div>
     </div>
+  {edaOverlayOpen && (
+      <div className="fixed inset-0 z-50">
+        <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={closeEdaOverlay} />
+        <div className="absolute top-0 right-0 h-full w-[75vw] max-w-[1400px] bg-background border-l shadow-xl flex flex-col animate-in slide-in-from-right duration-300">
+          <div className="flex items-center justify-between px-6 py-4 border-b bg-muted/40">
+            <div>
+              <h2 className="text-xl font-semibold">{edaOverlayMode === 'history' ? 'EDA History' : 'Run EDA'}</h2>
+              <p className="text-xs text-muted-foreground">{edaOverlayMode === 'history' ? 'Previous exploratory data analysis jobs' : 'Configure and execute an exploratory data analysis job'}</p>
+            </div>
+            <button onClick={closeEdaOverlay} className="p-2 rounded-md hover:bg-muted"><X className="h-4 w-4" /></button>
+          </div>
+          <div className="flex-1 overflow-auto p-6 space-y-6">
+            {edaOverlayMode === 'history' && (
+              <div className="space-y-4">
+                <div className="text-sm text-muted-foreground">{edaJobs.length} job(s)</div>
+                <div className="overflow-x-auto border rounded-md">
+                  <table className="w-full text-sm">
+                    <thead className="bg-muted/50">
+                      <tr className="text-left">
+                        <th className="px-3 py-2 font-medium">ID</th>
+                        <th className="px-3 py-2 font-medium">Status</th>
+                        <th className="px-3 py-2 font-medium">Duration</th>
+                        <th className="px-3 py-2 font-medium">Features</th>
+                        <th className="px-3 py-2 font-medium">Rows</th>
+                        <th className="px-3 py-2 font-medium">Completed</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {edaJobs.map(job => (
+                        <tr
+                          key={job.id}
+                          className={`border-t ${job.status === 'completed' ? 'cursor-pointer hover:bg-muted/40' : 'opacity-60'} ${edaSelectedJob?.id === job.id ? 'bg-muted/50' : ''}`}
+                          onClick={() => {
+                            if (job.status === 'completed') {
+                              setEdaSelectedJob(job);
+                              setEdaReportLoading(true);
+                              requestAnimationFrame(() => {
+                                const el = document.getElementById('inline-eda-report');
+                                if (el) el.scrollIntoView({ behavior: 'smooth' });
+                              });
+                            }
+                          }}
+                        >
+                          <td className="px-3 py-2 font-mono text-xs">{job.id}</td>
+                          <td className="px-3 py-2">
+                            <span className={`inline-flex items-center rounded px-2 py-0.5 text-[10px] font-medium border ${job.status === 'completed' ? 'bg-green-100 text-green-700 border-green-200' : 'bg-amber-100 text-amber-700 border-amber-200'}`}>{job.status}</span>
+                          </td>
+                          <td className="px-3 py-2">{job.duration || '-'}</td>
+                          <td className="px-3 py-2">{job.features ?? '-'}</td>
+                          <td className="px-3 py-2">{job.rows ? job.rows.toLocaleString() : '-'}</td>
+                          <td className="px-3 py-2">{job.completedAt ? new Date(job.completedAt).toLocaleTimeString() : '-'}</td>
+                        </tr>
+                      ))}
+                      {!edaJobs.length && (
+                        <tr><td colSpan={6} className="px-3 py-6 text-center text-xs text-muted-foreground">No EDA jobs yet.</td></tr>
+                      )}
+                    </tbody>
+                  </table>
+                </div>
+                {edaSelectedJob && edaSelectedJob.status === 'completed' && (
+                  <div id="inline-eda-report" className="border rounded-lg overflow-hidden mt-2 relative">
+                    {edaReportLoading && (
+                      <div className="absolute inset-0 flex flex-col items-center justify-center gap-2 bg-background/70 backdrop-blur-sm text-xs">
+                        <div className="h-6 w-6 rounded-full border-2 border-primary border-t-transparent animate-spin" />
+                        Loading report...
+                      </div>
+                    )}
+                    <div className="px-4 py-2 bg-muted/40 border-b flex items-center justify-between">
+                      <span className="text-sm font-medium">EDA Report</span>
+                      <span className="text-[10px] text-muted-foreground">/reports/pandas_profiling_report.html</span>
+                    </div>
+                    <iframe
+                      title="EDA Report"
+                      key={edaSelectedJob.id}
+                      src="/reports/pandas_profiling_report.html"
+                      onLoad={() => setEdaReportLoading(false)}
+                      className="w-full h-[600px] bg-background"
+                    />
+                  </div>
+                )}
+              </div>
+            )}
+            {edaOverlayMode === 'run' && (
+              <div className="space-y-6">
+                <div>
+                  <h3 className="text-sm font-medium mb-2">Select Features for EDA</h3>
+                  <div className="grid md:grid-cols-3 gap-4">
+                    <div className="border rounded-md p-3 h-64 flex flex-col">
+                      <div className="font-medium text-sm mb-2">Available Features</div>
+                      <div className="flex-1 overflow-auto space-y-1 text-sm">
+                        {edaAvailableFeatures.map(f => (
+                          <button key={f} type="button" onClick={() => toggleEdaAvailable(f)} className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${edaAvailableSelection.includes(f) ? 'bg-primary text-primary-foreground' : 'hover:bg-muted'}`}>{f}</button>
+                        ))}
+                        {!edaAvailableFeatures.length && <div className="text-muted-foreground text-xs">None</div>}
+                      </div>
+                      <div className="pt-2 text-[10px] text-muted-foreground">Click to select</div>
+                    </div>
+                    <div className="flex flex-col justify-center items-center gap-2">
+                      <Button variant="secondary" size="sm" onClick={edaAddSelected} disabled={!edaAvailableSelection.length}>Add →</Button>
+                      <Button variant="secondary" size="sm" onClick={edaRemoveSelected} disabled={!edaChosenSelection.length}>← Remove</Button>
+                      <Button variant="ghost" size="sm" onClick={edaClearAll} disabled={!edaSelectedFeatures.length}>Clear All</Button>
+                    </div>
+                    <div className="border rounded-md p-3 h-64 flex flex-col">
+                      <div className="font-medium text-sm mb-2">Selected Features ({edaSelectedFeatures.length})</div>
+                      <div className="flex-1 overflow-auto space-y-1 text-sm">
+                        {edaSelectedFeatures.map(f => (
+                          <button key={f} type="button" onClick={() => toggleEdaChosen(f)} className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${edaChosenSelection.includes(f) ? 'bg-destructive text-destructive-foreground' : 'hover:bg-muted'}`}>{f}</button>
+                        ))}
+                        {!edaSelectedFeatures.length && <div className="text-muted-foreground text-xs">None selected</div>}
+                      </div>
+                      <div className="pt-2 text-[10px] text-muted-foreground">Click to mark for removal</div>
+                    </div>
+                  </div>
+                </div>
+                <div className="space-y-4">
+                  <h3 className="text-sm font-medium">EDA Parameters</h3>
+                  <div className="grid grid-cols-2 gap-4">
+                    <div className="space-y-1.5 text-xs">
+                      <Label className="text-xs">Sample Size</Label>
+                      <Input placeholder="100000" defaultValue="100000" className="h-8 text-xs" />
+                    </div>
+                    <div className="space-y-1.5 text-xs">
+                      <Label className="text-xs">Analysis Type</Label>
+                      <Select>
+                        <SelectTrigger className="h-8 text-xs"><SelectValue placeholder="Select type" /></SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="pandas-profiling">Pandas profiling</SelectItem>
+                          <SelectItem value="sweetviz">Sweetviz</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    </div>
+                  </div>
+                  <div className="space-y-1.5 text-xs">
+                    <Label className="text-xs">Custom Parameters (JSON)</Label>
+                    <Textarea placeholder='{"correlation_threshold": 0.8, "outlier_detection": true}' className="font-mono text-[11px] min-h-[70px]" />
+                  </div>
+                </div>
+                <div className="pt-2">
+                  <Button onClick={runInlineEdaJob} disabled={edaIsRunning || !edaSelectedFeatures.length} className="w-full" size="sm">
+                    {edaIsRunning ? (<><Clock className="h-3.5 w-3.5 mr-2 animate-spin" />Running EDA...</>) : (<><Play className="h-3.5 w-3.5 mr-2" />Run EDA</>)}
+                  </Button>
+                  <p className="text-[10px] text-muted-foreground mt-2">{!edaSelectedFeatures.length ? 'Select at least one feature to enable.' : 'EDA will analyze the selected features.'}</p>
+                </div>
+              </div>
+            )}
+          </div>
+        </div>
+      </div>
+    )}
+    </>
   );
 }

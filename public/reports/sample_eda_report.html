@@ -1,0 +1,66 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<title>Sample EDA Report</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<style>
+ body { font-family: system-ui, -apple-system, sans-serif; margin: 0; padding: 1rem 2rem; background:#0a0a0a; color:#eee; }
+ h1 { font-size: 1.75rem; margin-top:0; }
+ .meta { display:flex; gap:2rem; flex-wrap:wrap; margin-bottom:1rem; }
+ .meta div { background:#1e1e1e; padding:.75rem 1rem; border-radius:8px; font-size:.8rem; }
+ section { margin:1.5rem 0; padding:1rem 1.25rem; background:#141414; border:1px solid #262626; border-radius:10px; }
+ h2 { font-size:1.1rem; text-transform:uppercase; letter-spacing:.05em; color:#9ae6ff; margin-top:0; }
+ table { width:100%; border-collapse:collapse; font-size:.8rem; }
+ th, td { padding:.5rem .6rem; border:1px solid #2a2a2a; text-align:left; }
+ th { background:#1f2937; }
+ .badge { display:inline-block; padding:2px 6px; background:#2563eb; color:#fff; border-radius:4px; font-size:.65rem; text-transform:uppercase; letter-spacing:.05em; }
+ .good { color:#10b981; }
+ .warn { color:#f59e0b; }
+ .bad { color:#ef4444; }
+ .grid { display:grid; gap:1rem; grid-template-columns:repeat(auto-fit,minmax(220px,1fr)); }
+ .card { background:#1e1e1e; padding:.75rem .9rem; border-radius:8px; border:1px solid #272727; }
+ .small { font-size:.65rem; text-transform:uppercase; letter-spacing:.08em; opacity:.7; }
+</style>
+</head>
+<body>
+  <h1>EDA Report <span class="badge">Demo</span></h1>
+  <div class="meta">
+    <div><strong>Generated:</strong><br/>2025-09-24 12:00 UTC</div>
+    <div><strong>Rows:</strong><br/>150,000</div>
+    <div><strong>Variables:</strong><br/>24</div>
+    <div><strong>Missing Cells:</strong><br/>2.3% (3,450)</div>
+  </div>
+
+  <section>
+    <h2>Dataset Overview</h2>
+    <div class="grid">
+      <div class="card"><div class="small">Completeness</div><div class="good" style="font-size:1.3rem; font-weight:600">97.7%</div></div>
+      <div class="card"><div class="small">Duplicate Rows</div><div class="bad" style="font-size:1.3rem; font-weight:600">247</div></div>
+      <div class="card"><div class="small">High Corr Pairs</div><div style="font-size:1.3rem; font-weight:600">7</div></div>
+      <div class="card"><div class="small">Skewed Vars</div><div class="warn" style="font-size:1.3rem; font-weight:600">5</div></div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Variables (Sample)</h2>
+    <table>
+      <thead>
+        <tr><th>Name</th><th>Type</th><th>Distinct</th><th>Missing%</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>age</td><td>numeric</td><td>61</td><td>0.2%</td><td></td></tr>
+        <tr><td>income</td><td>numeric</td><td>540</td><td>0.8%</td><td class="warn">skewed</td></tr>
+        <tr><td>credit_score</td><td>numeric</td><td>401</td><td>1.1%</td><td></td></tr>
+        <tr><td>amount</td><td>numeric</td><td>678</td><td>0.0%</td><td class="good">clean</td></tr>
+        <tr><td>merchant_category</td><td>categorical</td><td>82</td><td>4.2%</td><td class="bad">high missing</td></tr>
+      </tbody>
+    </table>
+  </section>
+
+  <section>
+    <h2>Notes</h2>
+    <p>This is a static embedded HTML file served from the public/reports folder. In production you can replace it with the real profiling output (e.g. pandas-profiling, ydata-profiling, sweetviz) and simply write it to this path so the UI can display it inside an iframe.</p>
+  </section>
+</body>
+</html>

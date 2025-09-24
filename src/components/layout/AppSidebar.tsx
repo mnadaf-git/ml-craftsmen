@@ -21,18 +21,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
+// Order updated: Projects first, EDA second, then Experiments, Observability
 const navigationItems = [
-  {
-    title: "EDA Jobs",
-    url: "/eda",
-    icon: BarChart3,
-    description: "Exploratory Data Analysis"
-  },
   {
     title: "Projects",
     url: "/projects",
     icon: Database,
     description: "Project Management"
+  },
+  {
+    title: "EDA",
+    url: "/eda",
+    icon: BarChart3,
+    description: "Exploratory Data Analysis"
   },
   {
     title: "Experiments",
@@ -70,22 +71,22 @@ export function AppSidebar() {
   };
 
   return (
-    <Sidebar className="border-r border-border bg-card/50 backdrop-blur-sm">
+    <Sidebar className="border-r border-border bg-white/90 dark:bg-card/50 backdrop-blur supports-[backdrop-filter]:bg-white/80">
       <SidebarHeader className="p-4 border-b border-border">
         <div className="flex items-center gap-3">
-          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
+          <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary shadow-sm">
             <Sparkles className="h-4 w-4 text-primary-foreground" />
           </div>
           {!collapsed && (
             <div>
-              <h2 className="text-sm font-semibold text-foreground">ML Platform</h2>
-              <p className="text-xs text-muted-foreground">Lifecycle Management</p>
+              <h2 className="text-sm font-semibold text-gray-900 dark:text-foreground">ML Platform</h2>
+              <p className="text-xs text-gray-500 dark:text-muted-foreground">Lifecycle Management</p>
             </div>
           )}
         </div>
       </SidebarHeader>
 
-      <SidebarContent className="p-2">
+      <SidebarContent className="p-2 bg-transparent">
         <SidebarGroup>
           <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>
             Core Features
@@ -95,7 +96,7 @@ export function AppSidebar() {
             <SidebarMenu>
               {navigationItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
-                  <SidebarMenuButton asChild className="h-12">
+                  <SidebarMenuButton asChild className="h-12 rounded-md">
                     <NavLink 
                       to={item.url} 
                       className={getNavClassName(item.url)}

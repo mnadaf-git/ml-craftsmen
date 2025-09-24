@@ -30,6 +30,8 @@ const App = () => (
             <Route path="/eda" element={<EDA />} />
             <Route path="/experiments" element={<Experiments />} />
             <Route path="/experiments/new" element={<NewExperiment />} />
+            {/* Summary alias route to avoid 404 after training redirect */}
+            <Route path="/experiments/summary" element={<Experiments />} />
             <Route path="/experiments/compare" element={<ExperimentComparison />} />
             <Route path="/observability" element={<Observability />} />
             {/* ADD ALL CUSTOM ROUTES ABOVE THE CATCH-ALL "*" ROUTE */}
