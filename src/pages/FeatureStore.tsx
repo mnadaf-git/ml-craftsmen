@@ -90,6 +90,7 @@ const transformTableColumns: Record<string, string[]> = {
 export default function FeatureStore() {
   const [views, setViews] = useState<FeatureViewMeta[]>(initialFeatureViews);
   const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [viewMode, setViewMode] = useState<'groups' | 'features'>('groups');
   const toggleExpanded = (name: string) => {
     setExpanded(prev => {
       const next = new Set(prev);
@@ -153,6 +154,11 @@ export default function FeatureStore() {
     setSelectedViewForFeature(viewName);
     resetFeatureForm();
   setSourceColumnChoice('');
+    setFeatureDialogOpen(true);
+  };
+  const openGlobalCreateFeature = () => {
+    setSelectedViewForFeature(null); // force user to pick a view in dialog
+    resetFeatureForm();
     setFeatureDialogOpen(true);
   };
   const isFeatureValid = () => {
@@ -223,151 +229,240 @@ export default function FeatureStore() {
       setFeatureForm(f => ({ ...f, name: toSentenceCase(val) }));
     }
   };
+  // Flatten all features for the Features view
+  const allFeaturesFlat = views.flatMap(v => v.features.map(feat => ({
+    view: v.name,
+    transformTable: v.transformTable,
+    keyColumn: v.keyColumn,
+    ...feat
+  })));
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Feature Views</h1>
-          <p className="text-muted-foreground text-sm">Catalog of reusable, versioned feature views for ML.</p>
+          <h1 className="text-2xl font-bold">{viewMode === 'groups' ? 'Feature Views' : 'Features'}</h1>
+          <p className="text-muted-foreground text-sm">
+            {viewMode === 'groups' ? 'Catalog of reusable, versioned feature views for ML.' : 'All features across views with details.'}
+          </p>
         </div>
-        <Dialog open={open} onOpenChange={setOpen}>
-          <DialogTrigger asChild>
-            <Button className="self-start">Create Feature View</Button>
-          </DialogTrigger>
-          <DialogContent>
-            <DialogHeader>
-              <DialogTitle>Create Feature View</DialogTitle>
-              <DialogDescription>Register a new feature view definition.</DialogDescription>
-            </DialogHeader>
-            <div className="space-y-4">
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Transform Table</label>
-                <Select value={form.transformTable} onValueChange={v => setForm(f => ({ ...f, transformTable: v }))}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Create new Transform Table" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="__new__">Create new Transform Table</SelectItem>
-                    {transformedTables.map(tt => (
-                      <SelectItem key={tt} value={tt}>{tt}</SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {form.transformTable === '__new__' && (
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">New Transform Table Name</label>
-                  <Input value={form.newTransformTable} onChange={e => setForm(f => ({ ...f, newTransformTable: e.target.value }))} placeholder="e.g. transformed_user_activity" />
-                </div>
-              )}
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Name</label>
-                <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. snow_incident_metrics_x" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Description</label>
-                <Textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature view" className="text-sm" />
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Key Column</label>
-                <Input value={form.keyColumn} onChange={e => setForm(f => ({ ...f, keyColumn: e.target.value }))} />
-              </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" onClick={() => setOpen(false)} size="sm">Cancel</Button>
-                <Button size="sm" onClick={handleCreate} disabled={!isValid()}>Create</Button>
-              </div>
-            </div>
-          </DialogContent>
-        </Dialog>
-      </div>
-      <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-        {views.map(fv => {
-          const isExpanded = expanded.has(fv.name);
-          return (
-            <Card key={fv.name} className={`transition-shadow flex flex-col ${isExpanded ? 'ring-1 ring-primary/40 shadow-md' : 'hover:shadow-md'}`}>
-              <button
-                type="button"
-                onClick={() => toggleExpanded(fv.name)}
-                className="text-left w-full"
-              >
-                <CardHeader className="pb-3">
-                  <div className="flex items-start justify-between gap-2">
-                    <div className="space-y-1 min-w-0">
-                      <CardTitle className="text-base font-semibold break-all flex items-center gap-2">
-                        <span>{fv.name}</span>
-                        <span className="text-[10px] font-normal text-muted-foreground">{isExpanded ? 'Hide' : 'Show'} features</span>
-                      </CardTitle>
-                      <CardDescription className="text-xs line-clamp-3 leading-relaxed">
-                        {fv.description}
-                      </CardDescription>
-                    </div>
-                    <Badge variant="secondary" className="shrink-0">{fv.featureCount} {fv.featureCount === 1 ? 'feature' : 'features'}</Badge>
-                  </div>
-                </CardHeader>
-              </button>
-              <CardContent className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2">
-                <div>
-                  <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Key Column</div>
-                  <div className="font-mono text-[11px]">{fv.keyColumn}</div>
-                </div>
-                <div>
-                  <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Transform Table</div>
-                  <div className="font-mono text-[11px]">{fv.transformTable}</div>
-                </div>
-              </CardContent>
-              {isExpanded && (
-                <div className="px-4 pb-4">
-                  <div className="flex items-center justify-between mb-2">
-                    <h4 className="text-[11px] font-semibold tracking-wide uppercase text-foreground/70">Features</h4>
-                    <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openCreateFeature(fv.name)}>Create Feature</Button>
-                  </div>
-                  <div className="border rounded-md overflow-auto max-h-64">
-                    <table className="w-full min-w-[640px] text-[11px]">
-                      <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
-                        <tr className="text-left">
-                          <th className="px-2 py-1 font-medium">Name</th>
-                          <th className="px-2 py-1 font-medium">Data Type</th>
-                          <th className="px-2 py-1 font-medium">Description</th>
-                          <th className="px-2 py-1 font-medium">Feature Type</th>
-                        </tr>
-                      </thead>
-                      <tbody>
-                        {fv.features.map(feat => (
-                          <tr key={feat.name} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: fv.name, feature: feat })}>
-                            <td className="px-2 py-1 font-mono text-[10px]">{feat.name}</td>
-                            <td className="px-2 py-1">{feat.dataType}</td>
-                            <td className="px-2 py-1 max-w-[220px] truncate" title={feat.description}>{feat.description}</td>
-                            <td className="px-2 py-1">
-                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${feat.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{feat.featureType}</span>
-                            </td>
-                          </tr>
+        <div className="flex items-start gap-4">
+          <div className="inline-flex rounded-md border bg-muted p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setViewMode('groups')}
+              className={`px-3 py-1 rounded-sm font-medium transition-colors ${viewMode === 'groups' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >Groups</button>
+            <button
+              type="button"
+              onClick={() => setViewMode('features')}
+              className={`px-3 py-1 rounded-sm font-medium transition-colors ${viewMode === 'features' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
+            >Features</button>
+          </div>
+          {viewMode === 'groups' && (
+            <Dialog open={open} onOpenChange={setOpen}>
+              <DialogTrigger asChild>
+                <Button className="self-start">Create Feature View</Button>
+              </DialogTrigger>
+              <DialogContent>
+                <DialogHeader>
+                  <DialogTitle>Create Feature View</DialogTitle>
+                  <DialogDescription>Register a new feature view definition.</DialogDescription>
+                </DialogHeader>
+                <div className="space-y-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Transform Table</label>
+                    <Select value={form.transformTable} onValueChange={v => setForm(f => ({ ...f, transformTable: v }))}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Create new Transform Table" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="__new__">Create new Transform Table</SelectItem>
+                        {transformedTables.map(tt => (
+                          <SelectItem key={tt} value={tt}>{tt}</SelectItem>
                         ))}
-                        {!fv.features.length && (
-                          <tr>
-                            <td colSpan={4} className="px-2 py-4 text-center text-muted-foreground">No features yet.</td>
-                          </tr>
-                        )}
-                      </tbody>
-                    </table>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {form.transformTable === '__new__' && (
+                    <div className="space-y-1">
+                      <label className="text-xs font-medium">New Transform Table Name</label>
+                      <Input value={form.newTransformTable} onChange={e => setForm(f => ({ ...f, newTransformTable: e.target.value }))} placeholder="e.g. transformed_user_activity" />
+                    </div>
+                  )}
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Name</label>
+                    <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. snow_incident_metrics_x" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Description</label>
+                    <Textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature view" className="text-sm" />
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Key Column</label>
+                    <Input value={form.keyColumn} onChange={e => setForm(f => ({ ...f, keyColumn: e.target.value }))} />
+                  </div>
+                  <div className="flex justify-end gap-2 pt-2">
+                    <Button variant="outline" onClick={() => setOpen(false)} size="sm">Cancel</Button>
+                    <Button size="sm" onClick={handleCreate} disabled={!isValid()}>Create</Button>
                   </div>
                 </div>
-              )}
-            </Card>
-          );
-        })}
+              </DialogContent>
+            </Dialog>
+          )}
+          {viewMode === 'features' && (
+            <Button className="self-start" onClick={openGlobalCreateFeature}>Create Feature</Button>
+          )}
+        </div>
       </div>
+      {viewMode === 'groups' && (
+        <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
+          {views.map(fv => {
+            const isExpanded = expanded.has(fv.name);
+            return (
+              <Card key={fv.name} className={`transition-shadow flex flex-col ${isExpanded ? 'ring-1 ring-primary/40 shadow-md' : 'hover:shadow-md'}`}>
+                <button
+                  type="button"
+                  onClick={() => toggleExpanded(fv.name)}
+                  className="text-left w-full"
+                >
+                  <CardHeader className="pb-3">
+                    <div className="flex items-start justify-between gap-2">
+                      <div className="space-y-1 min-w-0">
+                        <CardTitle className="text-base font-semibold break-all flex items-center gap-2">
+                          <span>{fv.name}</span>
+                          <span className="text-[10px] font-normal text-muted-foreground">{isExpanded ? 'Hide' : 'Show'} features</span>
+                        </CardTitle>
+                        <CardDescription className="text-xs line-clamp-3 leading-relaxed">
+                          {fv.description}
+                        </CardDescription>
+                      </div>
+                      <Badge variant="secondary" className="shrink-0">{fv.featureCount} {fv.featureCount === 1 ? 'feature' : 'features'}</Badge>
+                    </div>
+                  </CardHeader>
+                </button>
+                <CardContent className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2">
+                  <div>
+                    <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Key Column</div>
+                    <div className="font-mono text-[11px]">{fv.keyColumn}</div>
+                  </div>
+                  <div>
+                    <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Transform Table</div>
+                    <div className="font-mono text-[11px]">{fv.transformTable}</div>
+                  </div>
+                </CardContent>
+                {isExpanded && (
+                  <div className="px-4 pb-4">
+                    <div className="flex items-center justify-between mb-2">
+                      <h4 className="text-[11px] font-semibold tracking-wide uppercase text-foreground/70">Features</h4>
+                      <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openCreateFeature(fv.name)}>Create Feature</Button>
+                    </div>
+                    <div className="border rounded-md overflow-auto max-h-64">
+                      <table className="w-full min-w-[640px] text-[11px]">
+                        <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
+                          <tr className="text-left">
+                            <th className="px-2 py-1 font-medium">Name</th>
+                            <th className="px-2 py-1 font-medium">Data Type</th>
+                            <th className="px-2 py-1 font-medium">Description</th>
+                            <th className="px-2 py-1 font-medium">Feature Type</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {fv.features.map(feat => (
+                            <tr key={feat.name} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: fv.name, feature: feat })}>
+                              <td className="px-2 py-1 font-mono text-[10px]">{feat.name}</td>
+                              <td className="px-2 py-1">{feat.dataType}</td>
+                              <td className="px-2 py-1 max-w-[220px] truncate" title={feat.description}>{feat.description}</td>
+                              <td className="px-2 py-1">
+                                <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${feat.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{feat.featureType}</span>
+                              </td>
+                            </tr>
+                          ))}
+                          {!fv.features.length && (
+                            <tr>
+                              <td colSpan={4} className="px-2 py-4 text-center text-muted-foreground">No features yet.</td>
+                            </tr>
+                          )}
+                        </tbody>
+                      </table>
+                    </div>
+                  </div>
+                )}
+              </Card>
+            );
+          })}
+        </div>
+      )}
+      {viewMode === 'features' && (
+        <div className="space-y-3">
+          <div className="text-[11px] text-muted-foreground">{allFeaturesFlat.length} feature{allFeaturesFlat.length === 1 ? '' : 's'}</div>
+          <div className="border rounded-md overflow-auto max-h-[70vh]">
+            <table className="w-full min-w-[860px] text-[11px]">
+              <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
+                <tr className="text-left">
+                  <th className="px-2 py-1 font-medium">Feature Name</th>
+                  <th className="px-2 py-1 font-medium">Data Type</th>
+                  <th className="px-2 py-1 font-medium">Feature Type</th>
+                  <th className="px-2 py-1 font-medium">View</th>
+                  <th className="px-2 py-1 font-medium">Transform Table</th>
+                  <th className="px-2 py-1 font-medium">Key Column</th>
+                  <th className="px-2 py-1 font-medium">Description</th>
+                </tr>
+              </thead>
+              <tbody>
+                {allFeaturesFlat.map(f => (
+                  <tr key={`${f.view}::${f.name}`} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: f.view, feature: { name: f.name, dataType: f.dataType, description: f.description, featureType: f.featureType, transformationLogic: f.transformationLogic } })}>
+                    <td className="px-2 py-1 font-mono text-[10px]">{f.name}</td>
+                    <td className="px-2 py-1">{f.dataType}</td>
+                    <td className="px-2 py-1">
+                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${f.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{f.featureType}</span>
+                    </td>
+                    <td className="px-2 py-1 font-mono text-[10px]">{f.view}</td>
+                    <td className="px-2 py-1 font-mono text-[10px]">{f.transformTable}</td>
+                    <td className="px-2 py-1 font-mono text-[10px]">{f.keyColumn}</td>
+                    <td className="px-2 py-1 max-w-[320px] truncate" title={f.description}>{f.description}</td>
+                  </tr>
+                ))}
+                {!allFeaturesFlat.length && (
+                  <tr>
+                    <td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">No features available.</td>
+                  </tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
 
       {/* Create Feature Dialog */}
       <Dialog open={featureDialogOpen} onOpenChange={setFeatureDialogOpen}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Create Feature</DialogTitle>
-            <DialogDescription>Add a new feature to {selectedViewForFeature}</DialogDescription>
+            <DialogDescription>
+              {selectedViewForFeature ? (
+                <>Add a new feature to {selectedViewForFeature}</>
+              ) : (
+                <>Select a feature view and define the feature.</>
+              )}
+            </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
+            {!selectedViewForFeature && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Feature View</label>
+                <Select value={selectedViewForFeature || ''} onValueChange={v => setSelectedViewForFeature(v)}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select feature view" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {views.map(v => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-xs font-medium">Source Column</label>
-              <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect}>
+              <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect} disabled={!selectedViewForFeature}>
                 <SelectTrigger className="h-8 text-xs">
                   <SelectValue placeholder="Select source column or create new" />
                 </SelectTrigger>
@@ -378,6 +473,7 @@ export default function FeatureStore() {
                   ))}
                 </SelectContent>
               </Select>
+              {!selectedViewForFeature && <p className="text-[10px] text-muted-foreground">Select a feature view first.</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Feature Name</label>
@@ -385,7 +481,7 @@ export default function FeatureStore() {
                 value={featureForm.name}
                 onChange={e => setFeatureForm(f => ({ ...f, name: e.target.value }))}
                 placeholder="Readable feature name"
-                disabled={!!sourceColumnChoice && sourceColumnChoice !== 'create-new'}
+                disabled={(!selectedViewForFeature) || (!!sourceColumnChoice && sourceColumnChoice !== 'create-new')}
               />
               {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
                 <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
@@ -430,7 +526,7 @@ export default function FeatureStore() {
             )}
             <div className="flex justify-end gap-2 pt-2">
               <Button variant="outline" size="sm" onClick={() => setFeatureDialogOpen(false)}>Cancel</Button>
-              <Button size="sm" onClick={handleCreateFeature} disabled={!isFeatureValid()}>Save</Button>
+              <Button size="sm" onClick={handleCreateFeature} disabled={!selectedViewForFeature || !isFeatureValid()}>Save</Button>
             </div>
           </div>
         </DialogContent>

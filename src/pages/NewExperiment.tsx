@@ -2,16 +2,19 @@ import { useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import { ArrowLeft, CheckSquare, Play, Database, Clock, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
+import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
+// Textarea already imported above (keeping original import position compatibility)
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { useToast } from "@/hooks/use-toast";
 
 interface FeatureView { id: string; name: string; features: string[]; }
+interface CustomFeatureMeta { name: string; dataType: string; description: string; featureType: 'Calculated' | 'Dynamic'; transformationLogic?: string; }
 
 const mockProjects = [
   { id: "1", name: "ChangeFailure" },
@@ -82,6 +85,15 @@ export default function NewExperiment() {
   const [trainingSubmitted, setTrainingSubmitted] = useState(false);
   const [availableSelection, setAvailableSelection] = useState<string[]>([]);
   const [chosenSelection, setChosenSelection] = useState<string[]>([]);
+  // Custom feature creation state
+  const [customFeatures, setCustomFeatures] = useState<CustomFeatureMeta[]>([]);
+  const [createFeatureOpen, setCreateFeatureOpen] = useState(false);
+  const [featureForm, setFeatureForm] = useState<CustomFeatureMeta>({ name: '', dataType: '', description: '', featureType: 'Calculated' });
+  const [transformationLogic, setTransformationLogic] = useState('');
+  const [logicValidated, setLogicValidated] = useState(false);
+  const [logicError, setLogicError] = useState<string | null>(null);
+  // Source column (to mirror Feature Views create feature dialog options)
+  const [sourceColumnChoice, setSourceColumnChoice] = useState('');
 
   // EDA overlay state
   const [edaOverlayOpen, setEdaOverlayOpen] = useState(false);
@@ -157,7 +169,10 @@ export default function NewExperiment() {
   };
 
   const availableModels = selectedProject ? (mockModels[selectedProject] || []) : [];
-  const allFeatures = Array.from(new Set(mockFeatureViews.flatMap(fv => fv.features))).sort();
+  const allFeatures = Array.from(new Set([
+    ...mockFeatureViews.flatMap(fv => fv.features),
+    ...customFeatures.map(f => f.name)
+  ])).sort();
   const availableFeatures = allFeatures.filter(f => !selectedFeatures.includes(f));
 
   const toggleAvailable = (f: string) => setAvailableSelection(p => p.includes(f) ? p.filter(x => x !== f) : [...p, f]);
@@ -165,6 +180,65 @@ export default function NewExperiment() {
   const addSelected = () => { if (availableSelection.length) { setSelectedFeatures(prev => [...prev, ...availableSelection]); setAvailableSelection([]);} };
   const removeSelected = () => { if (chosenSelection.length) { setSelectedFeatures(prev => prev.filter(f => !chosenSelection.includes(f))); setChosenSelection([]);} };
   const clearAll = () => { setSelectedFeatures([]); setAvailableSelection([]); setChosenSelection([]); };
+
+  const resetFeatureForm = () => {
+    setFeatureForm({ name: '', dataType: '', description: '', featureType: 'Calculated' });
+    setTransformationLogic('');
+    setLogicValidated(false);
+    setLogicError(null);
+    setSourceColumnChoice('');
+  };
+
+  // Match Feature Views validation logic (basic Python-esque heuristics)
+  const validatePythonLogic = (code: string): string | null => {
+    if (!code.trim()) return 'Logic is required.';
+    if (/[<>]/.test(code)) return 'Angle brackets not allowed.'; // basic injection guard
+    const pairs: Array<[string,string]> = [['(',')'],['[',']'],['{','}']];
+    for (const [o,c] of pairs) {
+      let bal = 0;
+      for (const ch of code) { if (ch === o) bal++; else if (ch === c) bal--; if (bal < 0) return `Unbalanced ${o}${c} pair.`; }
+      if (bal !== 0) return `Unbalanced ${o}${c} pair.`;
+    }
+    const single = (code.match(/(?<!\\)'/g) || []).length;
+    const double = (code.match(/(?<!\\)"/g) || []).length;
+    if (single % 2 !== 0) return 'Unmatched single quote.';
+    if (double % 2 !== 0) return 'Unmatched double quote.';
+    if (!/(return|lambda|if |for |while |=|\+|\-|\*|\/)/.test(code)) {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_\.]*$/.test(code.trim())) {
+        return 'Provide a valid Python expression or block.';
+      }
+    }
+    return null;
+  };
+  const handleValidateLogic = () => { const err = validatePythonLogic(transformationLogic); setLogicError(err); setLogicValidated(!err); };
+  const featureFormValid = () => {
+    if (!(featureForm.name && featureForm.dataType && featureForm.description)) return false;
+    if (featureForm.featureType === 'Dynamic') return transformationLogic.trim() && logicValidated && !logicError ? true : false;
+    return true;
+  };
+  const toSentenceCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+  const currentSourceColumns = labelSourceTable
+    ? (mockTableColumns[labelSourceTable as keyof typeof mockTableColumns] || [])
+    : Array.from(new Set(Object.values(mockTableColumns).flat()));
+  const handleSourceColumnSelect = (val: string) => {
+    setSourceColumnChoice(val);
+    if (val === 'create-new') {
+      setFeatureForm(f => ({ ...f, name: '' }));
+    } else if (val) {
+      setFeatureForm(f => ({ ...f, name: toSentenceCase(val) }));
+    }
+  };
+  const handleSaveFeature = () => {
+    if (!featureFormValid()) return;
+    if (allFeatures.includes(featureForm.name)) { setLogicError('Feature name already exists'); return; }
+    setCustomFeatures(prev => [{
+      ...featureForm,
+      transformationLogic: featureForm.featureType === 'Dynamic' ? transformationLogic.trim() : undefined
+    }, ...prev]);
+    resetFeatureForm();
+    setCreateFeatureOpen(false);
+    toast({ title: 'Feature Created', description: 'Custom feature added to available features.' });
+  };
 
   const handleGenerateDataset = () => {
     if (!selectedProject || !selectedModel || !labelSourceTable || !targetLabelColumn) {
@@ -298,9 +372,91 @@ export default function NewExperiment() {
                   <div className="pt-2 text-[10px] text-muted-foreground">Click to mark for removal</div>
                 </div>
               </div>
-              <div className="flex justify-end gap-2 pt-2">
-                <Button variant="outline" size="sm" onClick={() => openEdaOverlay('history')}>EDA History</Button>
-                <Button variant="default" size="sm" onClick={() => openEdaOverlay('run')} disabled={!selectedFeatures.length}>Run EDA</Button>
+              <div className="flex justify-between gap-4 pt-2">
+                <Dialog open={createFeatureOpen} onOpenChange={(o) => { setCreateFeatureOpen(o); if(!o) resetFeatureForm(); else { setSourceColumnChoice(''); } }}>
+                  <DialogTrigger asChild>
+                    <Button size="sm" variant="outline">Create Feature</Button>
+                  </DialogTrigger>
+                  <DialogContent className="max-w-lg">
+                    <DialogHeader>
+                      <DialogTitle>Create Feature</DialogTitle>
+                      <DialogDescription>Add a custom feature for this experiment.</DialogDescription>
+                    </DialogHeader>
+                    <div className="space-y-3 text-xs">
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Source Column</Label>
+                        <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect}>
+                          <SelectTrigger className="h-8 text-[11px]">
+                            <SelectValue placeholder="Select source column or create new" />
+                          </SelectTrigger>
+                          <SelectContent>
+                            <SelectItem value="create-new">Create new column</SelectItem>
+                            {currentSourceColumns.map(col => <SelectItem key={col} value={col}>{col}</SelectItem>)}
+                          </SelectContent>
+                        </Select>
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Feature Name</Label>
+                        <Input
+                          value={featureForm.name}
+                          onChange={e => setFeatureForm(f => ({ ...f, name: e.target.value }))}
+                          placeholder="Readable feature name"
+                          disabled={!!sourceColumnChoice && sourceColumnChoice !== 'create-new'}
+                        />
+                        {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
+                          <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
+                        )}
+                      </div>
+                      <div className="space-y-1">
+                        <Label className="text-[11px]">Description</Label>
+                        <Textarea rows={3} value={featureForm.description} onChange={e => setFeatureForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description" className="text-[11px]" />
+                      </div>
+                      <div className="grid grid-cols-2 gap-3">
+                        <div className="space-y-1">
+                          <Label className="text-[11px]">Data Type</Label>
+                          <Input value={featureForm.dataType} onChange={e => setFeatureForm(f => ({ ...f, dataType: e.target.value }))} placeholder="e.g. float" />
+                        </div>
+                        <div className="space-y-1">
+                          <Label className="text-[11px]">Feature Type</Label>
+                          <Select value={featureForm.featureType} onValueChange={v => { setFeatureForm(f => ({ ...f, featureType: v as 'Calculated' | 'Dynamic' })); setLogicValidated(false); setLogicError(null); setTransformationLogic(''); }}>
+                            <SelectTrigger className="h-8 text-[11px]">
+                              <SelectValue />
+                            </SelectTrigger>
+                            <SelectContent>
+                              <SelectItem value="Calculated">Calculated</SelectItem>
+                              <SelectItem value="Dynamic">Dynamic</SelectItem>
+                            </SelectContent>
+                          </Select>
+                        </div>
+                      </div>
+                      {featureForm.featureType === 'Dynamic' && (
+                        <div className="space-y-1">
+                          <Label className="text-[11px] flex items-center justify-between">Transformation Logic (Python)
+                            {logicValidated && !logicError && <span className="text-green-600 text-[10px]">Validated</span>}
+                          </Label>
+                          <Textarea rows={5} value={transformationLogic} onChange={e => { setTransformationLogic(e.target.value); setLogicValidated(false); setLogicError(null); }} placeholder="(amount / (credit_score + 1)) * 100" className="font-mono text-[11px]" />
+                          {logicError && <p className="text-[10px] text-red-600">{logicError}</p>}
+                          {!logicError && logicValidated && <p className="text-[10px] text-green-600">Syntax looks good.</p>}
+                          {!logicValidated && !logicError && transformationLogic && <p className="text-[10px] text-amber-600">Needs validation.</p>}
+                          <div className="flex gap-2 pt-1">
+                            <Button type="button" size="sm" variant="secondary" className="h-6 px-2 text-[10px]" onClick={handleValidateLogic} disabled={!transformationLogic.trim()}>Validate</Button>
+                          </div>
+                        </div>
+                      )}
+                      {featureForm.featureType === 'Calculated' && (
+                        <div className="text-[11px] text-muted-foreground border rounded-md p-2 bg-muted/40">Data map screen will show here</div>
+                      )}
+                      <div className="flex justify-end gap-2 pt-2">
+                        <Button variant="outline" size="sm" onClick={() => { setCreateFeatureOpen(false); }}>Cancel</Button>
+                        <Button size="sm" onClick={handleSaveFeature} disabled={!featureFormValid()}>Save Feature</Button>
+                      </div>
+                    </div>
+                  </DialogContent>
+                </Dialog>
+                <div className="flex gap-2">
+                  <Button variant="outline" size="sm" onClick={() => openEdaOverlay('history')}>EDA History</Button>
+                  <Button variant="default" size="sm" onClick={() => openEdaOverlay('run')} disabled={!selectedFeatures.length}>Run EDA</Button>
+                </div>
               </div>
             </div>
 
