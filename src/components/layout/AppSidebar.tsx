@@ -1,13 +1,14 @@
 import { NavLink, useLocation } from "react-router-dom";
-import { 
-  BarChart3, 
-  Beaker, 
+import {
+  BarChart3,
+  Beaker,
   Database,
   Activity,
   ChevronRight,
   Sparkles,
   Table2,
-  Boxes
+  Boxes,
+  LayoutDashboard
 } from "lucide-react";
 
 import {
@@ -23,19 +24,19 @@ import {
   useSidebar,
 } from "@/components/ui/sidebar";
 
-// Order updated: Transformed Tables, Feature Store, Projects, EDA, Experiments, Observability
+// Order updated: Feature Groups (home), Transformed Tables, Projects, Dashboard, EDA, Experiments, Observability
 const navigationItems = [
+  {
+    title: "Feature Groups",
+    url: "/",
+    icon: Boxes,
+    description: "Reusable feature groups"
+  },
   {
     title: "Transformed Tables",
     url: "/transformed-tables",
     icon: Table2,
     description: "Materialized & processed tables"
-  },
-  {
-    title: "Feature Views",
-    url: "/feature-views",
-    icon: Boxes,
-    description: "Reusable feature views"
   },
   {
     title: "Projects",
@@ -44,16 +45,22 @@ const navigationItems = [
     description: "Project Management"
   },
   {
+    title: "Experiments",
+    url: "/experiments",
+    icon: Beaker,
+    description: "Model Training & Tracking"
+  },
+  {
     title: "EDA",
     url: "/eda",
     icon: BarChart3,
     description: "Exploratory Data Analysis"
   },
   {
-    title: "Experiments",
-    url: "/experiments",
-    icon: Beaker,
-    description: "Model Training & Tracking"
+    title: "Dashboard",
+    url: "/dashboard",
+    icon: LayoutDashboard,
+    description: "Overview & Analytics"
   },
   {
     title: "Observability",
@@ -78,8 +85,8 @@ export function AppSidebar() {
   const getNavClassName = (path: string) => {
     const active = isActive(path);
     return `group relative transition-smooth ${
-      active 
-        ? "bg-primary/20 text-primary border-r-2 border-primary" 
+      active
+        ? "bg-primary/20 text-primary border-r-2 border-primary"
         : "hover:bg-muted/50 text-muted-foreground hover:text-foreground"
     }`;
   };
@@ -105,14 +112,14 @@ export function AppSidebar() {
           <SidebarGroupLabel className={collapsed ? "sr-only" : ""}>
             Core Features
           </SidebarGroupLabel>
-          
+
           <SidebarGroupContent>
             <SidebarMenu>
               {navigationItems.map((item) => (
                 <SidebarMenuItem key={item.title}>
                   <SidebarMenuButton asChild className="h-12 rounded-md">
-                    <NavLink 
-                      to={item.url} 
+                    <NavLink
+                      to={item.url}
                       className={getNavClassName(item.url)}
                     >
                       <item.icon className="h-5 w-5 flex-shrink-0" />

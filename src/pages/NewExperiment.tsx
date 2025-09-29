@@ -92,7 +92,7 @@ export default function NewExperiment() {
   const [transformationLogic, setTransformationLogic] = useState('');
   const [logicValidated, setLogicValidated] = useState(false);
   const [logicError, setLogicError] = useState<string | null>(null);
-  // Source column (to mirror Feature Views create feature dialog options)
+  // Source column (to mirror Feature Groups create feature dialog options)
   const [sourceColumnChoice, setSourceColumnChoice] = useState('');
 
   // EDA overlay state
@@ -189,7 +189,7 @@ export default function NewExperiment() {
     setSourceColumnChoice('');
   };
 
-  // Match Feature Views validation logic (basic Python-esque heuristics)
+  // Match Feature Groups validation logic (basic Python-esque heuristics)
   const validatePythonLogic = (code: string): string | null => {
     if (!code.trim()) return 'Logic is required.';
     if (/[<>]/.test(code)) return 'Angle brackets not allowed.'; // basic injection guard

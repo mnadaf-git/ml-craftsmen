@@ -13,6 +13,7 @@ interface FeatureMeta {
   description: string;
   featureType: 'Calculated' | 'Dynamic';
   transformationLogic?: string; // present only for Dynamic features
+  mapped_column: string; // lowercase name with underscores
 }
 
 interface FeatureViewMeta {
@@ -26,64 +27,68 @@ interface FeatureViewMeta {
 
 const initialFeatureViews: FeatureViewMeta[] = [
   {
-    name: 'snow_change_request_x',
-    description: 'Aggregated change request signals including lifecycle KPIs and assignment metadata for risk modeling.',
-    featureCount: 3,
+    name: 'Change Request',
+    description: 'Contains features which are at change request level.',
+    featureCount: 4,
     keyColumn: 'change_request_id',
     transformTable: 'transformed_change_requests',
     features: [
-      { name: 'avg_lead_time_hours', dataType: 'float', description: 'Average lead time for completed change requests', featureType: 'Calculated' },
-      { name: 'risk_score', dataType: 'int', description: 'Change request predicted risk score', featureType: 'Dynamic' },
-      { name: 'rollback_indicator', dataType: 'boolean', description: 'Indicates whether a rollback occurred', featureType: 'Calculated' }
+      { name: 'Change Lead Duration', dataType: 'int', description: 'Lead time for change request planned start date', featureType: 'Dynamic', mapped_column: 'change_lead_duration' },
+      { name: 'Change Planned Duration', dataType: 'int', description: 'Planned Duration of change implementation', featureType: 'Calculated', mapped_column: 'change_planned_duration' },
+      { name: 'Approved Planned Leadtime', dataType: 'int', description: 'Lead time for change implementation from approval date', featureType: 'Dynamic', mapped_column: 'approved_planned_leadtime' },
+      { name: 'Change CI Count', dataType: 'int', description: 'No of change tasks associated to change request', featureType: 'Calculated', mapped_column: 'change_ci_count' }
+
     ]
   },
   {
-    name: 'snow_assignee_x',
-    description: 'Per-assignee productivity and workload enrichment (volumes, closure velocity) for performance features.',
+    name: 'Assignee',
+    description: 'Assignee level features',
     featureCount: 2,
     keyColumn: 'assignee_id',
     transformTable: 'transformed_assignees',
     features: [
-      { name: 'tickets_closed_7d', dataType: 'int', description: 'Tickets closed by assignee in last 7 days', featureType: 'Calculated' },
-      { name: 'avg_resolution_hours', dataType: 'float', description: 'Average resolution time over last 30 days', featureType: 'Calculated' }
+      { name: 'Change Assignee Prior Changes', dataType: 'int', description: 'Changes implemented by assignee in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignee_prior_changes' },
+      { name: 'Change Assignee Prior Changes Failure Rate', dataType: 'float', description: 'Change failure rate by assignee in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignee_prior_changes_failure_rate' }
     ]
   },
   {
-    name: 'snow_assignement_group_x',
-    description: 'Team / assignment group level aggregates (ticket mix, throughput) supporting escalation & routing models.',
+    name: 'Assignment Group',
+    description: 'Team / assignment group level features',
     featureCount: 2,
     keyColumn: 'assignement_group_id',
     transformTable: 'transformed_assignment_groups',
     features: [
-      { name: 'open_backlog', dataType: 'int', description: 'Current open tickets in group', featureType: 'Dynamic' },
-      { name: 'sla_breach_rate_30d', dataType: 'float', description: 'Percent of tickets breaching SLA (30d)', featureType: 'Calculated' }
+      { name: 'Change Assignment Group Prior Changes', dataType: 'int', description: 'Changes implemented by assignment group in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignment_group_prior_changes' },
+      { name: 'Change Assignment Group Prior Changes Failure Rate', dataType: 'float', description: 'Change failure rate by assignment group in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignment_group_prior_changes_failure_rate' }
     ]
   }
 ];
 
-// Mock transform table -> columns mapping (source columns)
-const transformTableColumns: Record<string, string[]> = {
+// Mock transform table -> columns mapping (source columns with data types)
+const transformTableColumns: Record<string, Array<{name: string, dataType: string}>> = {
   transformed_change_requests: [
-    'avg_lead_time_hours',
-    'risk_score',
-    'rollback_indicator',
-    'change_request_id',
-    'category'
+    { name: 'change_lead_duration', dataType: 'int' },
+    { name: 'change_planned_duration', dataType: 'int' },
+    { name: 'approved_planned_leadtime', dataType: 'int' },
+    { name: 'change_request_id', dataType: 'text' },
+    { name: 'category', dataType: 'text' },
+    { name: 'change_ci_count', dataType: 'int' },
+    { name: 'change_type', dataType: 'text' }
   ],
   transformed_assignees: [
-    'tickets_closed_7d',
-    'avg_resolution_hours',
-    'assignee_id'
+    { name: 'change_assignee_prior_changes', dataType: 'int' },
+    { name: 'change_assignee_prior_changes_failure_rate', dataType: 'float' },
+    { name: 'assignee_id', dataType: 'text' }
   ],
   transformed_assignment_groups: [
-    'open_backlog',
-    'sla_breach_rate_30d',
-    'assignement_group_id'
+    { name: 'change_assignment_group_prior_changes', dataType: 'int' },
+    { name: 'change_assignment_group_prior_changes_failure_rate', dataType: 'float' },
+    { name: 'assignement_group_id', dataType: 'text' }
   ],
   transformed_incident_metrics: [
-    'mttr_hours',
-    'incident_volume_7d',
-    'p1_fraction_30d'
+    { name: 'mttr_hours', dataType: 'float' },
+    { name: 'incident_volume_7d', dataType: 'int' },
+    { name: 'p1_fraction_30d', dataType: 'float' }
   ]
 };
 
@@ -114,7 +119,7 @@ export default function FeatureStore() {
     newTransformTable: '' // when creating a new one
   });
   const [featureDialogOpen, setFeatureDialogOpen] = useState(false);
-  const [featureForm, setFeatureForm] = useState({ name: '', dataType: '', description: '', featureType: 'Calculated' as 'Calculated' | 'Dynamic' });
+  const [featureForm, setFeatureForm] = useState({ name: '', dataType: '', description: '', featureType: 'Calculated' as 'Calculated' | 'Dynamic', mapped_column: '' });
   const [transformationLogic, setTransformationLogic] = useState('');
   const [logicValidated, setLogicValidated] = useState(false);
   const [logicError, setLogicError] = useState<string | null>(null);
@@ -145,7 +150,7 @@ export default function FeatureStore() {
   };
 
   const resetFeatureForm = () => {
-    setFeatureForm({ name: '', dataType: '', description: '', featureType: 'Calculated' });
+    setFeatureForm({ name: '', dataType: '', description: '', featureType: 'Calculated', mapped_column: '' });
     setTransformationLogic('');
     setLogicValidated(false);
     setLogicError(null);
@@ -162,7 +167,13 @@ export default function FeatureStore() {
     setFeatureDialogOpen(true);
   };
   const isFeatureValid = () => {
+    // Basic field validation
     if (!(featureForm.name && featureForm.dataType && featureForm.description && featureForm.featureType)) return false;
+
+    // mapped_column is required for create-new, optional for existing columns (will be auto-set)
+    if (sourceColumnChoice === 'create-new' && !featureForm.mapped_column) return false;
+
+    // Dynamic feature validation
     if (featureForm.featureType === 'Dynamic') {
       return transformationLogic.trim().length > 0 && logicValidated && !logicError;
     }
@@ -177,7 +188,8 @@ export default function FeatureStore() {
         dataType: featureForm.dataType.trim(),
         description: featureForm.description.trim(),
   featureType: featureForm.featureType,
-  transformationLogic: featureForm.featureType === 'Dynamic' ? transformationLogic.trim() : undefined
+  transformationLogic: featureForm.featureType === 'Dynamic' ? transformationLogic.trim() : undefined,
+  mapped_column: featureForm.mapped_column.trim()
       }, ...v.features],
       featureCount: v.featureCount + 1
     } : v));
@@ -223,10 +235,26 @@ export default function FeatureStore() {
   const handleSourceColumnSelect = (val: string) => {
     setSourceColumnChoice(val);
     if (val === 'create-new') {
-      // allow manual entry
-      setFeatureForm(f => ({ ...f, name: '' }));
+      // allow manual entry for feature name, auto-generate mapped_column
+      setFeatureForm(f => ({
+        ...f,
+        name: '',
+        mapped_column: '',
+        dataType: '' // reset data type for new columns
+      }));
     } else if (val) {
-      setFeatureForm(f => ({ ...f, name: toSentenceCase(val) }));
+      // existing column selected - use column name as feature name, get data type from column info
+      const selectedView = views.find(v => v.name === selectedViewForFeature);
+      const transformTable = selectedView?.transformTable;
+      const columnInfo = transformTable ? transformTableColumns[transformTable]?.find(col => col.name === val) : null;
+
+      const sentenceName = toSentenceCase(val);
+      setFeatureForm(f => ({
+        ...f,
+        name: sentenceName,
+        mapped_column: val, // use the actual column name as mapped_column
+        dataType: columnInfo?.dataType || '' // auto-populate data type from column info
+      }));
     }
   };
   // Flatten all features for the Features view
@@ -240,9 +268,9 @@ export default function FeatureStore() {
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div>
-          <h1 className="text-2xl font-bold">{viewMode === 'groups' ? 'Feature Views' : 'Features'}</h1>
+          <h1 className="text-2xl font-bold">{viewMode === 'groups' ? 'Feature Groups' : 'Features'}</h1>
           <p className="text-muted-foreground text-sm">
-            {viewMode === 'groups' ? 'Catalog of reusable, versioned feature views for ML.' : 'All features across views with details.'}
+            {viewMode === 'groups' ? 'Catalog of reusable, versioned feature groups for ML.' : 'All features across groups with details.'}
           </p>
         </div>
         <div className="flex items-start gap-4">
@@ -261,12 +289,12 @@ export default function FeatureStore() {
           {viewMode === 'groups' && (
             <Dialog open={open} onOpenChange={setOpen}>
               <DialogTrigger asChild>
-                <Button className="self-start">Create Feature View</Button>
+                <Button className="self-start">Create Feature Group</Button>
               </DialogTrigger>
               <DialogContent>
                 <DialogHeader>
-                  <DialogTitle>Create Feature View</DialogTitle>
-                  <DialogDescription>Register a new feature view definition.</DialogDescription>
+                  <DialogTitle>Create Feature Group</DialogTitle>
+                  <DialogDescription>Register a new feature group definition.</DialogDescription>
                 </DialogHeader>
                 <div className="space-y-4">
                   <div className="space-y-1">
@@ -295,7 +323,7 @@ export default function FeatureStore() {
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Description</label>
-                    <Textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature view" className="text-sm" />
+                    <Textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature group" className="text-sm" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Key Column</label>
@@ -361,6 +389,7 @@ export default function FeatureStore() {
                         <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
                           <tr className="text-left">
                             <th className="px-2 py-1 font-medium">Name</th>
+                            <th className="px-2 py-1 font-medium">Mapped Column</th>
                             <th className="px-2 py-1 font-medium">Data Type</th>
                             <th className="px-2 py-1 font-medium">Description</th>
                             <th className="px-2 py-1 font-medium">Feature Type</th>
@@ -370,6 +399,7 @@ export default function FeatureStore() {
                           {fv.features.map(feat => (
                             <tr key={feat.name} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: fv.name, feature: feat })}>
                               <td className="px-2 py-1 font-mono text-[10px]">{feat.name}</td>
+                              <td className="px-2 py-1 font-mono text-[10px] text-muted-foreground">{feat.mapped_column}</td>
                               <td className="px-2 py-1">{feat.dataType}</td>
                               <td className="px-2 py-1 max-w-[220px] truncate" title={feat.description}>{feat.description}</td>
                               <td className="px-2 py-1">
@@ -379,7 +409,7 @@ export default function FeatureStore() {
                           ))}
                           {!fv.features.length && (
                             <tr>
-                              <td colSpan={4} className="px-2 py-4 text-center text-muted-foreground">No features yet.</td>
+                              <td colSpan={5} className="px-2 py-4 text-center text-muted-foreground">No features yet.</td>
                             </tr>
                           )}
                         </tbody>
@@ -400,9 +430,10 @@ export default function FeatureStore() {
               <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
                 <tr className="text-left">
                   <th className="px-2 py-1 font-medium">Feature Name</th>
+                  <th className="px-2 py-1 font-medium">Mapped Column</th>
                   <th className="px-2 py-1 font-medium">Data Type</th>
                   <th className="px-2 py-1 font-medium">Feature Type</th>
-                  <th className="px-2 py-1 font-medium">View</th>
+                  <th className="px-2 py-1 font-medium">Group</th>
                   <th className="px-2 py-1 font-medium">Transform Table</th>
                   <th className="px-2 py-1 font-medium">Key Column</th>
                   <th className="px-2 py-1 font-medium">Description</th>
@@ -410,8 +441,9 @@ export default function FeatureStore() {
               </thead>
               <tbody>
                 {allFeaturesFlat.map(f => (
-                  <tr key={`${f.view}::${f.name}`} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: f.view, feature: { name: f.name, dataType: f.dataType, description: f.description, featureType: f.featureType, transformationLogic: f.transformationLogic } })}>
+                  <tr key={`${f.view}::${f.name}`} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: f.view, feature: { name: f.name, dataType: f.dataType, description: f.description, featureType: f.featureType, transformationLogic: f.transformationLogic, mapped_column: f.mapped_column } })}>
                     <td className="px-2 py-1 font-mono text-[10px]">{f.name}</td>
+                    <td className="px-2 py-1 font-mono text-[10px] text-muted-foreground">{f.mapped_column}</td>
                     <td className="px-2 py-1">{f.dataType}</td>
                     <td className="px-2 py-1">
                       <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${f.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{f.featureType}</span>
@@ -424,7 +456,7 @@ export default function FeatureStore() {
                 ))}
                 {!allFeaturesFlat.length && (
                   <tr>
-                    <td colSpan={7} className="px-2 py-6 text-center text-muted-foreground">No features available.</td>
+                    <td colSpan={8} className="px-2 py-6 text-center text-muted-foreground">No features available.</td>
                   </tr>
                 )}
               </tbody>
@@ -442,17 +474,17 @@ export default function FeatureStore() {
               {selectedViewForFeature ? (
                 <>Add a new feature to {selectedViewForFeature}</>
               ) : (
-                <>Select a feature view and define the feature.</>
+                <>Select a feature group and define the feature.</>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
             {!selectedViewForFeature && (
               <div className="space-y-1">
-                <label className="text-xs font-medium">Feature View</label>
+                <label className="text-xs font-medium">Feature Group</label>
                 <Select value={selectedViewForFeature || ''} onValueChange={v => setSelectedViewForFeature(v)}>
                   <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select feature view" />
+                    <SelectValue placeholder="Select feature group" />
                   </SelectTrigger>
                   <SelectContent>
                     {views.map(v => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}
@@ -469,24 +501,47 @@ export default function FeatureStore() {
                 <SelectContent>
                   <SelectItem value="create-new">Create new column</SelectItem>
                   {(selectedViewForFeature ? transformTableColumns[views.find(v => v.name === selectedViewForFeature)?.transformTable || ''] || [] : []).map(col => (
-                    <SelectItem key={col} value={col}>{col}</SelectItem>
+                    <SelectItem key={col.name} value={col.name}>{col.name} ({col.dataType})</SelectItem>
                   ))}
                 </SelectContent>
               </Select>
-              {!selectedViewForFeature && <p className="text-[10px] text-muted-foreground">Select a feature view first.</p>}
+              {!selectedViewForFeature && <p className="text-[10px] text-muted-foreground">Select a feature group first.</p>}
             </div>
             <div className="space-y-1">
               <label className="text-xs font-medium">Feature Name</label>
               <Input
                 value={featureForm.name}
-                onChange={e => setFeatureForm(f => ({ ...f, name: e.target.value }))}
+                onChange={e => {
+                  const name = e.target.value;
+                  // Only auto-generate mapped_column if "Create new column" is selected
+                  if (sourceColumnChoice === 'create-new') {
+                    const mappedColumn = name.toLowerCase().replace(/\s+/g, '_');
+                    setFeatureForm(f => ({ ...f, name, mapped_column: mappedColumn }));
+                  } else {
+                    setFeatureForm(f => ({ ...f, name }));
+                  }
+                }}
                 placeholder="Readable feature name"
-                disabled={(!selectedViewForFeature) || (!!sourceColumnChoice && sourceColumnChoice !== 'create-new')}
+                disabled={!selectedViewForFeature}
               />
               {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
                 <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
               )}
             </div>
+            {/* Show mapped column field based on source column selection */}
+            {sourceColumnChoice === 'create-new' && (
+              <div className="space-y-1">
+                <label className="text-xs font-medium">Mapped Column</label>
+                <Input
+                  value={featureForm.mapped_column}
+                  onChange={e => setFeatureForm(f => ({ ...f, mapped_column: e.target.value }))}
+                  placeholder="e.g. change_lead_duration"
+                  className="font-mono text-xs bg-muted"
+                  disabled={true}
+                />
+                <p className="text-[10px] text-muted-foreground">Auto-generated from feature name (lowercase with underscores)</p>
+              </div>
+            )}
             <div className="space-y-1">
               <label className="text-xs font-medium">Description</label>
               <Textarea rows={3} value={featureForm.description} onChange={e => setFeatureForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature" className="text-xs" />
@@ -494,7 +549,17 @@ export default function FeatureStore() {
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-1">
                 <label className="text-xs font-medium">Data Type</label>
-                <Input value={featureForm.dataType} onChange={e => setFeatureForm(f => ({ ...f, dataType: e.target.value }))} placeholder="e.g. float" />
+                <Select value={featureForm.dataType} onValueChange={v => setFeatureForm(f => ({ ...f, dataType: v }))}>
+                  <SelectTrigger className="h-8 text-xs">
+                    <SelectValue placeholder="Select data type" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="int">int</SelectItem>
+                    <SelectItem value="float">float</SelectItem>
+                    <SelectItem value="datetime">datetime</SelectItem>
+                    <SelectItem value="text">text</SelectItem>
+                  </SelectContent>
+                </Select>
               </div>
               <div className="space-y-1">
                 <label className="text-xs font-medium">Feature Type</label>
@@ -539,7 +604,7 @@ export default function FeatureStore() {
             <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/40">
               <div>
                 <h2 className="text-lg font-semibold">Feature: {featureOverlay.feature.name}</h2>
-                <p className="text-xs text-muted-foreground">View: {featureOverlay.view}</p>
+                <p className="text-xs text-muted-foreground">Group: {featureOverlay.view}</p>
               </div>
               <button onClick={() => setFeatureOverlay(null)} className="p-2 rounded-md hover:bg-muted text-muted-foreground">Close</button>
             </div>

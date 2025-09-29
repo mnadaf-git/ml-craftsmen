@@ -26,10 +26,11 @@ const App = () => (
       <BrowserRouter>
         <AppLayout>
           <Routes>
-            <Route path="/" element={<Dashboard />} />
+            <Route path="/" element={<FeatureStore />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/projects" element={<Projects />} />
             <Route path="/transformed-tables" element={<TransformedTables />} />
-            <Route path="/feature-views" element={<FeatureStore />} />
+            <Route path="/feature-groups" element={<FeatureStore />} />
             <Route path="/projects/:projectId/models" element={<ProjectModels />} />
             <Route path="/eda" element={<EDA />} />
             <Route path="/experiments" element={<Experiments />} />
