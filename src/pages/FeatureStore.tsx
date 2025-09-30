@@ -6,7 +6,10 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
+import { Switch } from "@/components/ui/switch";
 import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import CreateFeatureDialog from "@/components/CreateFeatureDialog";
 import {
   loadMetadata,
   createFeatureGroup,
@@ -16,10 +19,14 @@ import {
   updateFeatureInGroup,
   getTransformedTableById,
   createTransformedTable,
+  addColumnToTable,
+  updateColumnInTable,
+  deleteColumnFromTable,
   type MetadataStore,
   type FeatureGroup,
   type FeatureMeta,
-  type TransformedTable
+  type TransformedTable,
+  type ColumnMeta
 } from "@/lib/metadata";
 
 export default function FeatureStore() {
@@ -56,7 +63,10 @@ export default function FeatureStore() {
     description: '',
     featureType: 'Calculated' as 'Calculated' | 'Dynamic' | 'Direct',
     mapped_column: '',
-    transformationLogic: ''
+    transformationLogic: '',
+    isDynamic: false,
+    sourceTableId: '',
+    transformationLanguage: 'SQL' as 'SQL' | 'Python'
   });
 
   const [logicValidated, setLogicValidated] = useState(false);
@@ -93,7 +103,10 @@ export default function FeatureStore() {
       description: '',
       featureType: 'Calculated',
       mapped_column: '',
-      transformationLogic: ''
+      transformationLogic: '',
+      isDynamic: false,
+      sourceTableId: '',
+      transformationLanguage: 'SQL'
     });
     setLogicValidated(false);
     setLogicError(null);
@@ -184,28 +197,55 @@ export default function FeatureStore() {
           name: featureForm.name.trim(),
           dataType: featureForm.dataType,
           description: featureForm.description.trim(),
-          featureType: featureForm.featureType,
+          featureType: (featureForm.isDynamic ? 'Dynamic' : 'Calculated') as 'Calculated' | 'Dynamic' | 'Direct',
           mapped_column: featureForm.mapped_column.trim(),
-          transformationLogic: featureForm.featureType === 'Dynamic' ? featureForm.transformationLogic.trim() : undefined,
-          transformation: featureCreationType === 'direct' && selectedSourceTable && selectedColumns.length > 0
-            ? `Source: ${getTransformedTableById(metadata.transformedTables, selectedSourceTable)?.name}, Column: ${selectedColumns[0]}`
-            : undefined
+          transformationLogic: featureForm.transformationLogic.trim(),
+          transformation: featureForm.transformationLogic.trim()
         };
 
         updatedMetadata = await updateFeatureInGroup(metadata, editingFeature.group.id, editingFeature.feature.id, featureUpdate);
+
+        // Find the feature group to get the associated transform table ID
+        const featureGroup = updatedMetadata.featureGroups.find(group => group.id === editingFeature.group.id);
+        if (featureGroup && featureGroup.transformTableId) {
+          // Update corresponding column in the transformed table
+          // Use the original mapped_column as the identifier and update with new values
+          const originalMappedColumn = editingFeature.feature.mapped_column;
+          const columnUpdates: Partial<ColumnMeta> = {
+            name: featureForm.mapped_column.trim(),
+            dataType: featureForm.dataType,
+            description: featureForm.description.trim()
+          };
+
+          updatedMetadata = await updateColumnInTable(updatedMetadata, featureGroup.transformTableId, originalMappedColumn, columnUpdates);
+        }
       } else {
         // Create new feature
-        updatedMetadata = await addFeatureToGroup(metadata, selectedGroupForFeature, {
+        const featureData = {
           name: featureForm.name.trim(),
           dataType: featureForm.dataType,
           description: featureForm.description.trim(),
-          featureType: featureForm.featureType,
+          featureType: (featureForm.isDynamic ? 'Dynamic' : 'Calculated') as 'Calculated' | 'Dynamic' | 'Direct',
           mapped_column: featureForm.mapped_column.trim(),
-          transformationLogic: featureForm.featureType === 'Dynamic' ? featureForm.transformationLogic.trim() : undefined,
-          transformation: featureCreationType === 'direct' && selectedSourceTable && selectedColumns.length > 0
-            ? `Source: ${getTransformedTableById(metadata.transformedTables, selectedSourceTable)?.name}, Column: ${selectedColumns[0]}`
-            : undefined
-        });
+          transformationLogic: featureForm.transformationLogic.trim(),
+          transformation: featureForm.transformationLogic.trim()
+        };
+
+        // Add feature to group
+        updatedMetadata = await addFeatureToGroup(metadata, selectedGroupForFeature, featureData);
+
+        // Find the feature group to get the associated transform table ID
+        const featureGroup = updatedMetadata.featureGroups.find(group => group.id === selectedGroupForFeature);
+        if (featureGroup && featureGroup.transformTableId) {
+          // Create corresponding column in the transformed table
+          const columnData: ColumnMeta = {
+            name: featureForm.mapped_column.trim(),
+            dataType: featureForm.dataType,
+            description: featureForm.description.trim()
+          };
+
+          updatedMetadata = await addColumnToTable(updatedMetadata, featureGroup.transformTableId, columnData);
+        }
       }
 
       setMetadata(updatedMetadata);
@@ -234,8 +274,20 @@ export default function FeatureStore() {
 
     try {
       const { feature, group } = showDeleteFeatureDialog;
+
+      // Delete the feature from the group
       const updatedMetadata = await deleteFeatureFromGroup(metadata, group.id, feature.id);
-      setMetadata(updatedMetadata);
+
+      // Find the feature group to get the associated transform table ID
+      const featureGroup = group;
+      if (featureGroup && featureGroup.transformTableId) {
+        // Delete corresponding column from the transformed table
+        const finalMetadata = await deleteColumnFromTable(updatedMetadata, featureGroup.transformTableId, feature.mapped_column);
+        setMetadata(finalMetadata);
+      } else {
+        setMetadata(updatedMetadata);
+      }
+
       setShowDeleteFeatureDialog(null);
 
       // Close feature overlay if we're viewing the deleted feature
@@ -261,7 +313,10 @@ export default function FeatureStore() {
       description: feature.description,
       featureType: feature.featureType || 'Calculated',
       mapped_column: feature.mapped_column,
-      transformationLogic: feature.transformationLogic || ''
+      transformationLogic: feature.transformationLogic || '',
+      isDynamic: feature.featureType === 'Dynamic',
+      sourceTableId: '',
+      transformationLanguage: 'SQL'
     });
 
     // Set up edit mode for Direct features
@@ -287,17 +342,16 @@ export default function FeatureStore() {
   };
 
   const isFeatureValid = () => {
-    if (!(featureForm.name && featureForm.dataType && featureForm.description && featureForm.featureType)) return false;
+    if (!(featureForm.name && featureForm.dataType && featureForm.description)) return false;
 
-    if (sourceColumnChoice === 'create-new' && !featureForm.mapped_column) return false;
+    if (!featureForm.mapped_column) return false;
 
-    if (featureForm.featureType === 'Dynamic') {
-      return featureForm.transformationLogic.trim().length > 0 && logicValidated && !logicError;
-    }
-    return true;
-  };
+    // Both calculated and dynamic features now require transformation logic
+    if (!featureForm.transformationLogic.trim()) return false;
 
-  const validatePythonLogic = (code: string): string | null => {
+    // Validation is required for both types
+    return !!(logicValidated && !logicError);
+  };  const validatePythonLogic = (code: string): string | null => {
     if (!code.trim()) return 'Logic is required.';
     if (/[<>]/.test(code)) return 'Angle brackets not allowed.';
 
@@ -454,10 +508,6 @@ export default function FeatureStore() {
 
   const openGroupCreateFeature = (groupId: string) => {
     setSelectedGroupForFeature(groupId);
-    setFeatureCreationType(null);
-    setSelectedSourceTable('');
-    setSelectedColumns([]);
-    resetFeatureForm();
     setShowCreateFeatureDialog(true);
   };
 
@@ -512,14 +562,30 @@ export default function FeatureStore() {
         const featureName = generateFeatureName(columnName);
         const transformation = `Source: ${sourceTable.name}, Column: ${columnName}`;
 
-        updatedMetadata = await addFeatureToGroup(updatedMetadata, selectedGroupForFeature, {
+        const featureData = {
           name: featureName,
           dataType: column.dataType,
           description: column.description || `Direct mapping from ${columnName}`,
-          featureType: 'Direct',
+          featureType: 'Direct' as 'Calculated' | 'Dynamic' | 'Direct',
           transformation,
           mapped_column: columnName
-        });
+        };
+
+        // Add feature to group
+        updatedMetadata = await addFeatureToGroup(updatedMetadata, selectedGroupForFeature, featureData);
+
+        // Find the feature group to get the associated transform table ID
+        const featureGroup = updatedMetadata.featureGroups.find(group => group.id === selectedGroupForFeature);
+        if (featureGroup && featureGroup.transformTableId) {
+          // Create corresponding column in the transformed table
+          const columnData: ColumnMeta = {
+            name: columnName,
+            dataType: column.dataType,
+            description: column.description || `Direct mapping from ${columnName}`
+          };
+
+          updatedMetadata = await addColumnToTable(updatedMetadata, featureGroup.transformTableId, columnData);
+        }
       }
 
       setMetadata(updatedMetadata);
@@ -644,10 +710,24 @@ export default function FeatureStore() {
             </Dialog>
           )}
           {viewMode === 'features' && (
-            <Button className="self-start" onClick={openGlobalCreateFeature}>Create Feature</Button>
+            <Button
+              className="self-start"
+              onClick={() => setShowCreateFeatureDialog(true)}
+            >
+              Create Feature
+            </Button>
           )}
         </div>
       </div>
+
+      {/* CreateFeatureDialog - Always available regardless of view mode */}
+      <CreateFeatureDialog
+        open={showCreateFeatureDialog}
+        onOpenChange={setShowCreateFeatureDialog}
+        metadata={metadata}
+        onMetadataUpdate={setMetadata}
+        selectedGroup={selectedGroupForFeature}
+      />
 
       {viewMode === 'groups' && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
@@ -789,316 +869,6 @@ export default function FeatureStore() {
           </CardContent>
         </Card>
       )}
-
-      {/* Create Feature Dialog */}
-      <Dialog open={showCreateFeatureDialog} onOpenChange={setShowCreateFeatureDialog}>
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>{isEditMode ? 'Edit Feature' : 'Create Feature'}</DialogTitle>
-            <DialogDescription>
-              {selectedGroupForFeature ? (
-                isEditMode
-                  ? <>Edit feature in {metadata.featureGroups.find(g => g.id === selectedGroupForFeature)?.name}</>
-                  : <>Add a new feature to {metadata.featureGroups.find(g => g.id === selectedGroupForFeature)?.name}</>
-              ) : (
-                isEditMode
-                  ? <>Edit the selected feature</>
-                  : <>Select a feature group and define the feature.</>
-              )}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 text-sm">
-            {/* Step 1: Feature Group Selection */}
-            {!selectedGroupForFeature && (
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Feature Group</label>
-                <Select value={selectedGroupForFeature || ''} onValueChange={v => setSelectedGroupForFeature(v)}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select feature group" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {metadata.featureGroups.map(group => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}
-                  </SelectContent>
-                </Select>
-              </div>
-            )}
-
-            {/* Step 2: Feature Type Selection */}
-            {selectedGroupForFeature && !featureCreationType && (
-              <div className="space-y-4">
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Feature Type</label>
-                  <p className="text-[10px] text-muted-foreground">Choose how you want to create features</p>
-                </div>
-                <div className="grid grid-cols-1 gap-3">
-                  <button
-                    onClick={() => setFeatureCreationType('direct')}
-                    className="p-4 border rounded-lg text-left hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="font-medium text-sm">Direct Feature</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Map columns directly from transformed tables. Select multiple columns to create multiple features.
-                    </div>
-                  </button>
-                  <button
-                    onClick={() => setFeatureCreationType('calculated')}
-                    className="p-4 border rounded-lg text-left hover:bg-muted/50 transition-colors"
-                  >
-                    <div className="font-medium text-sm">Calculated Feature</div>
-                    <div className="text-xs text-muted-foreground mt-1">
-                      Create a single feature with custom logic and transformations.
-                    </div>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3a: Direct Feature Form */}
-            {selectedGroupForFeature && featureCreationType === 'direct' && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFeatureCreationType(null)}
-                    className="text-xs"
-                  >
-                    ← Back
-                  </Button>
-                  <div className="text-xs font-medium">Direct Feature Creation</div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Source Table</label>
-                  <Select value={selectedSourceTable} onValueChange={setSelectedSourceTable}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Select source table" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {metadata.transformedTables.map(table => (
-                        <SelectItem key={table.id} value={table.id}>{table.name}</SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                {selectedSourceTable && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">
-                      {isEditMode ? 'Select Column' : 'Select Columns'}
-                    </label>
-                    <p className="text-[10px] text-muted-foreground">
-                      {isEditMode ? 'Choose the column for this feature' : 'Choose columns to create features from'}
-                    </p>
-                    <div className="border rounded-md p-3 max-h-64 overflow-y-auto">
-                      {(() => {
-                        const sourceTable = getTransformedTableById(metadata.transformedTables, selectedSourceTable);
-                        if (!sourceTable) return <p className="text-xs text-muted-foreground">No columns available</p>;
-
-                        return sourceTable.columns.map(column => (
-                          <div key={column.name} className="flex items-center space-x-2 py-2">
-                            <input
-                              type={isEditMode ? "radio" : "checkbox"}
-                              name={isEditMode ? "selectedColumn" : undefined}
-                              id={column.name}
-                              checked={selectedColumns.includes(column.name)}
-                              onChange={() => {
-                                if (isEditMode) {
-                                  // Single select for edit mode
-                                  setSelectedColumns([column.name]);
-                                } else {
-                                  // Multi-select for create mode
-                                  handleColumnToggle(column.name);
-                                }
-                              }}
-                              className="w-4 h-4"
-                            />
-                            <label htmlFor={column.name} className="flex-1 text-xs cursor-pointer">
-                              <div className="font-mono">{column.name}</div>
-                              <div className="text-muted-foreground">
-                                {column.dataType} • {column.description || 'No description'}
-                              </div>
-                            </label>
-                          </div>
-                        ));
-                      })()}
-                    </div>
-                    {selectedColumns.length > 0 && (
-                      <div className="text-xs text-muted-foreground">
-                        {isEditMode
-                          ? `Selected column: ${selectedColumns[0]}`
-                          : `${selectedColumns.length} column${selectedColumns.length === 1 ? '' : 's'} selected. Features will be created with auto-generated names.`
-                        }
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowCreateFeatureDialog(false)}>Cancel</Button>
-                  <Button
-                    size="sm"
-                    onClick={isEditMode ? handleCreateFeature : handleCreateDirectFeatures}
-                    disabled={!selectedSourceTable || selectedColumns.length === 0}
-                  >
-                    {isEditMode
-                      ? 'Update Feature'
-                      : `Create ${selectedColumns.length} Feature${selectedColumns.length === 1 ? '' : 's'}`
-                    }
-                  </Button>
-                </div>
-              </div>
-            )}
-
-            {/* Step 3b: Calculated Feature Form */}
-            {selectedGroupForFeature && featureCreationType === 'calculated' && (
-              <div className="space-y-4">
-                <div className="flex items-center gap-2">
-                  <Button
-                    variant="ghost"
-                    size="sm"
-                    onClick={() => setFeatureCreationType(null)}
-                    className="text-xs"
-                  >
-                    ← Back
-                  </Button>
-                  <div className="text-xs font-medium">Calculated Feature Creation</div>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Source Column</label>
-                  <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect}>
-                    <SelectTrigger className="h-8 text-xs">
-                      <SelectValue placeholder="Select source column or create new" />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="create-new">Create new column</SelectItem>
-                      {selectedGroupForFeature && (() => {
-                        const group = metadata.featureGroups.find(g => g.id === selectedGroupForFeature);
-                        const table = group ? getTransformedTableById(metadata.transformedTables, group.transformTableId) : null;
-                        return table?.columns.map(col => (
-                          <SelectItem key={col.name} value={col.name}>{col.name} ({col.dataType})</SelectItem>
-                        )) || [];
-                      })()}
-                    </SelectContent>
-                  </Select>
-                </div>
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Feature Name</label>
-                  <Input
-                    value={featureForm.name}
-                    onChange={e => {
-                      const name = e.target.value;
-                      // Clear error when user starts typing
-                      if (featureNameError) setFeatureNameError(null);
-
-                      if (sourceColumnChoice === 'create-new') {
-                        const mappedColumn = name.toLowerCase().replace(/\\s+/g, '_');
-                        setFeatureForm(f => ({
-                          ...f,
-                          name: name,
-                          mapped_column: mappedColumn
-                        }));
-                      } else {
-                        setFeatureForm(f => ({ ...f, name }));
-                      }
-                    }}
-                    onBlur={() => {
-                      // Check for duplicates when user leaves the field
-                      if (selectedGroupForFeature) {
-                        const excludeId = isEditMode && editingFeature ? editingFeature.feature.id : undefined;
-                        const error = checkFeatureNameDuplicate(featureForm.name, selectedGroupForFeature, excludeId);
-                        setFeatureNameError(error);
-                      }
-                    }}
-                    placeholder="Readable feature name"
-                    className={featureNameError ? "border-red-500" : ""}
-                  />
-                  {featureNameError && (
-                    <p className="text-xs text-red-600">{featureNameError}</p>
-                  )}
-                  {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
-                    <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
-                  )}
-                </div>
-
-                {sourceColumnChoice === 'create-new' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Mapped Column</label>
-                    <Input
-                      value={featureForm.mapped_column}
-                      onChange={e => setFeatureForm(f => ({ ...f, mapped_column: e.target.value }))}
-                      placeholder="e.g. change_lead_duration"
-                      className="font-mono text-xs bg-muted"
-                      disabled={true}
-                    />
-                    <p className="text-[10px] text-muted-foreground">Auto-generated from feature name (lowercase with underscores)</p>
-                  </div>
-                )}
-
-                <div className="space-y-1">
-                  <label className="text-xs font-medium">Description</label>
-                  <Textarea rows={3} value={featureForm.description} onChange={e => setFeatureForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature" className="text-xs" />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Data Type</label>
-                    <Select value={featureForm.dataType} onValueChange={v => setFeatureForm(f => ({ ...f, dataType: v as any }))}>
-                      <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Select data type" />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="int">int</SelectItem>
-                        <SelectItem value="float">float</SelectItem>
-                        <SelectItem value="datetime">datetime</SelectItem>
-                        <SelectItem value="text">text</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium">Feature Type</label>
-                    <Select value={featureForm.featureType} onValueChange={v => { setFeatureForm(f => ({ ...f, featureType: v as any })); setLogicValidated(false); setLogicError(null); }}>
-                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="Calculated">Calculated</SelectItem>
-                        <SelectItem value="Dynamic">Dynamic</SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                </div>
-
-                {featureForm.featureType === 'Dynamic' && (
-                  <div className="space-y-1">
-                    <label className="text-xs font-medium flex items-center justify-between">Transformation Logic (Python)
-                      {logicValidated && !logicError && <span className="text-[10px] text-green-600">Validated</span>}
-                    </label>
-                    <Textarea rows={5} value={featureForm.transformationLogic} onChange={e => { setFeatureForm(f => ({ ...f, transformationLogic: e.target.value })); setLogicValidated(false); setLogicError(null); }} placeholder="e.g. (risk_score / (avg_lead_time_hours + 1)) * 100" className="font-mono text-[11px]" />
-                    {logicError && <p className="text-[10px] text-red-600">{logicError}</p>}
-                    {!logicError && logicValidated && <p className="text-[10px] text-green-600">Syntax looks good.</p>}
-                    {!logicValidated && !logicError && featureForm.transformationLogic && <p className="text-[10px] text-amber-600">Needs validation.</p>}
-                    <div className="flex gap-2 pt-1">
-                      <Button type="button" size="sm" variant="secondary" onClick={handleValidateLogic} disabled={!featureForm.transformationLogic.trim()}>Validate</Button>
-                    </div>
-                  </div>
-                )}
-
-                {featureForm.featureType === 'Calculated' && (
-                  <div className="text-[11px] text-muted-foreground border rounded-md p-2 bg-muted/40">Data map screen will show here</div>
-                )}
-
-                <div className="flex justify-end gap-2 pt-2">
-                  <Button variant="outline" size="sm" onClick={() => setShowCreateFeatureDialog(false)}>Cancel</Button>
-                  <Button size="sm" onClick={handleCreateFeature} disabled={!selectedGroupForFeature || !isFeatureValid() || !!featureNameError}>
-                    {isEditMode ? 'Update Feature' : 'Save'}
-                  </Button>
-                </div>
-              </div>
-            )}
-          </div>
-        </DialogContent>
-      </Dialog>
 
       {/* Group Overlay */}
       {groupOverlay && (
