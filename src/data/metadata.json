@@ -1,0 +1,90 @@
+{
+    "transformedTables": [
+        {
+            "id": "table_001",
+            "name": "Customer Transactions",
+            "description": "Processed customer transaction data with calculated fields",
+            "columns": [
+                {
+                    "name": "customer_id",
+                    "dataType": "text",
+                    "description": "Unique customer identifier"
+                },
+                {
+                    "name": "transaction_amount",
+                    "dataType": "float",
+                    "description": "Transaction amount in USD"
+                },
+                {
+                    "name": "transaction_date",
+                    "dataType": "datetime",
+                    "description": "Date and time of transaction"
+                },
+                {
+                    "name": "category",
+                    "dataType": "text",
+                    "description": "Transaction category"
+                }
+            ],
+            "createdAt": "2025-09-30T10:00:00.000Z",
+            "updatedAt": "2025-09-30T10:00:00.000Z"
+        },
+        {
+            "id": "table_002",
+            "name": "Product Catalog",
+            "description": "Enhanced product information with ML features",
+            "columns": [
+                {
+                    "name": "product_id",
+                    "dataType": "text",
+                    "description": "Unique product identifier"
+                },
+                {
+                    "name": "price",
+                    "dataType": "float",
+                    "description": "Product price"
+                },
+                {
+                    "name": "category_score",
+                    "dataType": "float",
+                    "description": "ML-generated category relevance score"
+                }
+            ],
+            "createdAt": "2025-09-30T10:00:00.000Z",
+            "updatedAt": "2025-09-30T10:00:00.000Z"
+        }
+    ],
+    "featureGroups": [
+        {
+            "id": "group_001",
+            "name": "Customer Behavior Features",
+            "description": "Features that capture customer transaction patterns and behaviors",
+            "keyColumn": "customer_id",
+            "transformTableId": "table_001",
+            "features": [
+                {
+                    "id": "feat_001",
+                    "name": "Average Transaction Amount",
+                    "dataType": "float",
+                    "description": "Average transaction amount for the customer over the last 30 days",
+                    "featureType": "Calculated",
+                    "mapped_column": "avg_transaction_amount",
+                    "createdAt": "2025-09-30T10:00:00.000Z",
+                    "updatedAt": "2025-09-30T10:00:00.000Z"
+                },
+                {
+                    "id": "feat_002",
+                    "name": "Transaction Frequency",
+                    "dataType": "int",
+                    "description": "Number of transactions in the last 30 days",
+                    "featureType": "Calculated",
+                    "mapped_column": "transaction_frequency",
+                    "createdAt": "2025-09-30T10:00:00.000Z",
+                    "updatedAt": "2025-09-30T10:00:00.000Z"
+                }
+            ],
+            "createdAt": "2025-09-30T10:00:00.000Z",
+            "updatedAt": "2025-09-30T10:00:00.000Z"
+        }
+    ]
+}

@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
@@ -6,219 +6,319 @@ import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, Di
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
-
-interface FeatureMeta {
-  name: string;
-  dataType: string;
-  description: string;
-  featureType: 'Calculated' | 'Dynamic';
-  transformationLogic?: string; // present only for Dynamic features
-  mapped_column: string; // lowercase name with underscores
-}
-
-interface FeatureViewMeta {
-  name: string;
-  description: string;
-  featureCount: number; // retained for badge display
-  keyColumn: string;
-  transformTable: string;
-  features: FeatureMeta[];
-}
-
-const initialFeatureViews: FeatureViewMeta[] = [
-  {
-    name: 'Change Request',
-    description: 'Contains features which are at change request level.',
-    featureCount: 4,
-    keyColumn: 'change_request_id',
-    transformTable: 'transformed_change_requests',
-    features: [
-      { name: 'Change Lead Duration', dataType: 'int', description: 'Lead time for change request planned start date', featureType: 'Dynamic', mapped_column: 'change_lead_duration' },
-      { name: 'Change Planned Duration', dataType: 'int', description: 'Planned Duration of change implementation', featureType: 'Calculated', mapped_column: 'change_planned_duration' },
-      { name: 'Approved Planned Leadtime', dataType: 'int', description: 'Lead time for change implementation from approval date', featureType: 'Dynamic', mapped_column: 'approved_planned_leadtime' },
-      { name: 'Change CI Count', dataType: 'int', description: 'No of change tasks associated to change request', featureType: 'Calculated', mapped_column: 'change_ci_count' }
-
-    ]
-  },
-  {
-    name: 'Assignee',
-    description: 'Assignee level features',
-    featureCount: 2,
-    keyColumn: 'assignee_id',
-    transformTable: 'transformed_assignees',
-    features: [
-      { name: 'Change Assignee Prior Changes', dataType: 'int', description: 'Changes implemented by assignee in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignee_prior_changes' },
-      { name: 'Change Assignee Prior Changes Failure Rate', dataType: 'float', description: 'Change failure rate by assignee in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignee_prior_changes_failure_rate' }
-    ]
-  },
-  {
-    name: 'Assignment Group',
-    description: 'Team / assignment group level features',
-    featureCount: 2,
-    keyColumn: 'assignement_group_id',
-    transformTable: 'transformed_assignment_groups',
-    features: [
-      { name: 'Change Assignment Group Prior Changes', dataType: 'int', description: 'Changes implemented by assignment group in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignment_group_prior_changes' },
-      { name: 'Change Assignment Group Prior Changes Failure Rate', dataType: 'float', description: 'Change failure rate by assignment group in last 180 days', featureType: 'Calculated', mapped_column: 'change_assignment_group_prior_changes_failure_rate' }
-    ]
-  }
-];
-
-// Mock transform table -> columns mapping (source columns with data types)
-const transformTableColumns: Record<string, Array<{name: string, dataType: string}>> = {
-  transformed_change_requests: [
-    { name: 'change_lead_duration', dataType: 'int' },
-    { name: 'change_planned_duration', dataType: 'int' },
-    { name: 'approved_planned_leadtime', dataType: 'int' },
-    { name: 'change_request_id', dataType: 'text' },
-    { name: 'category', dataType: 'text' },
-    { name: 'change_ci_count', dataType: 'int' },
-    { name: 'change_type', dataType: 'text' }
-  ],
-  transformed_assignees: [
-    { name: 'change_assignee_prior_changes', dataType: 'int' },
-    { name: 'change_assignee_prior_changes_failure_rate', dataType: 'float' },
-    { name: 'assignee_id', dataType: 'text' }
-  ],
-  transformed_assignment_groups: [
-    { name: 'change_assignment_group_prior_changes', dataType: 'int' },
-    { name: 'change_assignment_group_prior_changes_failure_rate', dataType: 'float' },
-    { name: 'assignement_group_id', dataType: 'text' }
-  ],
-  transformed_incident_metrics: [
-    { name: 'mttr_hours', dataType: 'float' },
-    { name: 'incident_volume_7d', dataType: 'int' },
-    { name: 'p1_fraction_30d', dataType: 'float' }
-  ]
-};
+import { AlertDialog, AlertDialogAction, AlertDialogCancel, AlertDialogContent, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle } from "@/components/ui/alert-dialog";
+import {
+  loadMetadata,
+  createFeatureGroup,
+  addFeatureToGroup,
+  deleteFeatureGroup,
+  deleteFeatureFromGroup,
+  updateFeatureInGroup,
+  getTransformedTableById,
+  createTransformedTable,
+  type MetadataStore,
+  type FeatureGroup,
+  type FeatureMeta,
+  type TransformedTable
+} from "@/lib/metadata";
 
 export default function FeatureStore() {
-  const [views, setViews] = useState<FeatureViewMeta[]>(initialFeatureViews);
-  const [expanded, setExpanded] = useState<Set<string>>(new Set());
+  const [metadata, setMetadata] = useState<MetadataStore>({ transformedTables: [], featureGroups: [] });
   const [viewMode, setViewMode] = useState<'groups' | 'features'>('groups');
-  const toggleExpanded = (name: string) => {
-    setExpanded(prev => {
-      const next = new Set(prev);
-      if (next.has(name)) next.delete(name); else next.add(name);
-      return next;
-    });
-  };
-  const [open, setOpen] = useState(false);
-  const transformedTables = [
-    'transformed_change_requests',
-    'transformed_assignees',
-    'transformed_assignment_groups',
-    'transformed_incident_metrics'
-  ];
+  const [showCreateGroupDialog, setShowCreateGroupDialog] = useState(false);
+  const [showCreateFeatureDialog, setShowCreateFeatureDialog] = useState(false);
+  const [showDeleteGroupDialog, setShowDeleteGroupDialog] = useState<string | null>(null);
+  const [selectedGroupForFeature, setSelectedGroupForFeature] = useState<string | null>(null);
+  const [sourceColumnChoice, setSourceColumnChoice] = useState<string>('');
+  const [featureOverlay, setFeatureOverlay] = useState<{ group: FeatureGroup; feature: FeatureMeta } | null>(null);
+  const [groupOverlay, setGroupOverlay] = useState<FeatureGroup | null>(null);
 
-  const [form, setForm] = useState({
+  // New state for feature creation workflow
+  const [featureCreationType, setFeatureCreationType] = useState<'direct' | 'calculated' | null>(null);
+  const [selectedSourceTable, setSelectedSourceTable] = useState<string>('');
+  const [selectedColumns, setSelectedColumns] = useState<string[]>([]);
+
+  // New state for feature edit and delete
+  const [editingFeature, setEditingFeature] = useState<{ feature: FeatureMeta; group: FeatureGroup } | null>(null);
+  const [showDeleteFeatureDialog, setShowDeleteFeatureDialog] = useState<{ feature: FeatureMeta; group: FeatureGroup } | null>(null);
+  const [isEditMode, setIsEditMode] = useState(false);
+
+  const [groupForm, setGroupForm] = useState({
     name: '',
     description: '',
     keyColumn: '',
-    transformTable: '', // selected existing transform table or '__new__'
-    newTransformTable: '' // when creating a new one
+    transformTableId: 'CREATE_NEW'
   });
-  const [featureDialogOpen, setFeatureDialogOpen] = useState(false);
-  const [featureForm, setFeatureForm] = useState({ name: '', dataType: '', description: '', featureType: 'Calculated' as 'Calculated' | 'Dynamic', mapped_column: '' });
-  const [transformationLogic, setTransformationLogic] = useState('');
+
+  const [featureForm, setFeatureForm] = useState({
+    name: '',
+    dataType: 'text' as 'text' | 'int' | 'float' | 'datetime',
+    description: '',
+    featureType: 'Calculated' as 'Calculated' | 'Dynamic' | 'Direct',
+    mapped_column: '',
+    transformationLogic: ''
+  });
+
   const [logicValidated, setLogicValidated] = useState(false);
   const [logicError, setLogicError] = useState<string | null>(null);
-  const [selectedViewForFeature, setSelectedViewForFeature] = useState<string | null>(null);
-  const [sourceColumnChoice, setSourceColumnChoice] = useState<string>('');
 
-  // Overlay for feature detail
-  const [featureOverlay, setFeatureOverlay] = useState<{ view: string; feature: FeatureMeta } | null>(null);
+  // Duplicate validation error states
+  const [groupNameError, setGroupNameError] = useState<string | null>(null);
+  const [featureNameError, setFeatureNameError] = useState<string | null>(null);
 
-  const isValid = () => {
-    const hasTransformChoice = form.transformTable && (form.transformTable !== '__new__' || (form.transformTable === '__new__' && form.newTransformTable));
-    return form.name && form.description && form.keyColumn && hasTransformChoice;
-  };
+  useEffect(() => {
+    const loadData = async () => {
+      try {
+        const data = await loadMetadata();
+        setMetadata(data);
+      } catch (error) {
+        console.error('Failed to load metadata:', error);
+      }
+    };
 
-  const handleCreate = () => {
-    if (!isValid()) return;
-    const finalTransform = form.transformTable === '__new__' ? form.newTransformTable.trim() : form.transformTable;
-    setViews(prev => [{
-      name: form.name.trim(),
-      description: form.description.trim(),
-      featureCount: 0, // default until features are added elsewhere
-      keyColumn: form.keyColumn.trim(),
-      transformTable: finalTransform || 'unknown_transform',
-      features: []
-    }, ...prev]);
-    setForm({ name: '', description: '', keyColumn: '', transformTable: '', newTransformTable: '' });
-    setOpen(false);
+    loadData();
+  }, []);
+
+  const openGroupOverlay = (group: FeatureGroup) => {
+    setGroupOverlay(group);
+  };  const resetGroupForm = () => {
+    setGroupForm({ name: '', description: '', keyColumn: '', transformTableId: 'CREATE_NEW' });
+    setGroupNameError(null);
   };
 
   const resetFeatureForm = () => {
-    setFeatureForm({ name: '', dataType: '', description: '', featureType: 'Calculated', mapped_column: '' });
-    setTransformationLogic('');
+    setFeatureForm({
+      name: '',
+      dataType: 'text',
+      description: '',
+      featureType: 'Calculated',
+      mapped_column: '',
+      transformationLogic: ''
+    });
     setLogicValidated(false);
     setLogicError(null);
+    setSourceColumnChoice('');
+    setFeatureCreationType(null);
+    setSelectedSourceTable('');
+    setSelectedColumns([]);
+    setIsEditMode(false);
+    setEditingFeature(null);
+    setFeatureNameError(null);
   };
-  const openCreateFeature = (viewName: string) => {
-    setSelectedViewForFeature(viewName);
-    resetFeatureForm();
-  setSourceColumnChoice('');
-    setFeatureDialogOpen(true);
+
+  const handleCreateGroup = async () => {
+    if (!groupForm.name.trim()) return;
+
+    // Check for duplicate group name
+    const duplicateError = checkFeatureGroupNameDuplicate(groupForm.name);
+    if (duplicateError) {
+      setGroupNameError(duplicateError);
+      return;
+    }
+
+    let transformTableId = groupForm.transformTableId;
+    let currentMetadata = metadata;
+
+    // If no table is selected or CREATE_NEW is selected, create a new table
+    if (!transformTableId || transformTableId === 'CREATE_NEW') {
+      const tableName = createTableNameFromGroupName(groupForm.name);
+
+      try {
+        const updatedMetadata = await createTransformedTable(metadata, {
+          name: tableName,
+          description: `Transformed table for ${groupForm.name} feature group`,
+          columns: []
+        });
+
+        currentMetadata = updatedMetadata;
+        setMetadata(updatedMetadata);
+
+        // Find the newly created table and get its ID
+        const newTable = updatedMetadata.transformedTables.find(t => t.name === tableName);
+        transformTableId = newTable?.id || '';
+
+        if (!transformTableId) {
+          console.error('Failed to create transform table');
+          return;
+        }
+      } catch (error) {
+        console.error('Error creating transform table:', error);
+        return;
+      }
+    }
+
+    try {
+      const updatedMetadata = await createFeatureGroup(currentMetadata, {
+        name: groupForm.name.trim(),
+        description: groupForm.description.trim(),
+        keyColumn: groupForm.keyColumn.trim(),
+        transformTableId: transformTableId,
+        features: []
+      });
+
+      setMetadata(updatedMetadata);
+      setShowCreateGroupDialog(false);
+      resetGroupForm();
+    } catch (error) {
+      console.error('Failed to create feature group:', error);
+    }
   };
-  const openGlobalCreateFeature = () => {
-    setSelectedViewForFeature(null); // force user to pick a view in dialog
-    resetFeatureForm();
-    setFeatureDialogOpen(true);
+
+  const handleCreateFeature = async () => {
+    if (!selectedGroupForFeature || !isFeatureValid()) return;
+
+    // Check for duplicate feature name
+    const excludeId = isEditMode && editingFeature ? editingFeature.feature.id : undefined;
+    const duplicateError = checkFeatureNameDuplicate(featureForm.name, selectedGroupForFeature, excludeId);
+    if (duplicateError) {
+      setFeatureNameError(duplicateError);
+      return;
+    }
+
+    try {
+      let updatedMetadata;
+
+      if (isEditMode && editingFeature) {
+        // Edit existing feature
+        const featureUpdate = {
+          name: featureForm.name.trim(),
+          dataType: featureForm.dataType,
+          description: featureForm.description.trim(),
+          featureType: featureForm.featureType,
+          mapped_column: featureForm.mapped_column.trim(),
+          transformationLogic: featureForm.featureType === 'Dynamic' ? featureForm.transformationLogic.trim() : undefined,
+          transformation: featureCreationType === 'direct' && selectedSourceTable && selectedColumns.length > 0
+            ? `Source: ${getTransformedTableById(metadata.transformedTables, selectedSourceTable)?.name}, Column: ${selectedColumns[0]}`
+            : undefined
+        };
+
+        updatedMetadata = await updateFeatureInGroup(metadata, editingFeature.group.id, editingFeature.feature.id, featureUpdate);
+      } else {
+        // Create new feature
+        updatedMetadata = await addFeatureToGroup(metadata, selectedGroupForFeature, {
+          name: featureForm.name.trim(),
+          dataType: featureForm.dataType,
+          description: featureForm.description.trim(),
+          featureType: featureForm.featureType,
+          mapped_column: featureForm.mapped_column.trim(),
+          transformationLogic: featureForm.featureType === 'Dynamic' ? featureForm.transformationLogic.trim() : undefined,
+          transformation: featureCreationType === 'direct' && selectedSourceTable && selectedColumns.length > 0
+            ? `Source: ${getTransformedTableById(metadata.transformedTables, selectedSourceTable)?.name}, Column: ${selectedColumns[0]}`
+            : undefined
+        });
+      }
+
+      setMetadata(updatedMetadata);
+      setShowCreateFeatureDialog(false);
+      resetFeatureForm();
+      setSelectedGroupForFeature(null);
+      setIsEditMode(false);
+      setEditingFeature(null);
+    } catch (error) {
+      console.error('Failed to save feature:', error);
+    }
   };
+
+  const handleDeleteGroup = async (groupId: string) => {
+    try {
+      const updatedMetadata = await deleteFeatureGroup(metadata, groupId);
+      setMetadata(updatedMetadata);
+      setShowDeleteGroupDialog(null);
+    } catch (error) {
+      console.error('Failed to delete feature group:', error);
+    }
+  };
+
+  const handleDeleteFeature = async () => {
+    if (!showDeleteFeatureDialog) return;
+
+    try {
+      const { feature, group } = showDeleteFeatureDialog;
+      const updatedMetadata = await deleteFeatureFromGroup(metadata, group.id, feature.id);
+      setMetadata(updatedMetadata);
+      setShowDeleteFeatureDialog(null);
+
+      // Close feature overlay if we're viewing the deleted feature
+      if (featureOverlay && featureOverlay.feature.id === feature.id) {
+        setFeatureOverlay(null);
+      }
+    } catch (error) {
+      console.error('Failed to delete feature:', error);
+    }
+  };
+
+  const handleEditFeature = (editData: { feature: FeatureMeta; group: FeatureGroup }) => {
+    const { feature, group } = editData;
+
+    // Set edit mode and store editing feature
+    setIsEditMode(true);
+    setEditingFeature(editData);
+
+    // Populate the form with existing feature data
+    setFeatureForm({
+      name: feature.name,
+      dataType: feature.dataType,
+      description: feature.description,
+      featureType: feature.featureType || 'Calculated',
+      mapped_column: feature.mapped_column,
+      transformationLogic: feature.transformationLogic || ''
+    });
+
+    // Set up edit mode for Direct features
+    if (feature.featureType === 'Direct' && feature.transformation) {
+      // Parse transformation to get source table and column
+      const transformationMatch = feature.transformation.match(/Source: (.+?), Column: (.+)/);
+      if (transformationMatch) {
+        const [, tableName, columnName] = transformationMatch;
+        const sourceTable = metadata.transformedTables.find(t => t.name === tableName);
+        if (sourceTable) {
+          setSelectedSourceTable(sourceTable.id);
+          // For edit mode, set single column selection
+          setSelectedColumns([columnName]);
+          setFeatureCreationType('direct');
+        }
+      }
+    } else {
+      setFeatureCreationType('calculated');
+    }
+
+    setSelectedGroupForFeature(group.id);
+    setShowCreateFeatureDialog(true);
+  };
+
   const isFeatureValid = () => {
-    // Basic field validation
     if (!(featureForm.name && featureForm.dataType && featureForm.description && featureForm.featureType)) return false;
 
-    // mapped_column is required for create-new, optional for existing columns (will be auto-set)
     if (sourceColumnChoice === 'create-new' && !featureForm.mapped_column) return false;
 
-    // Dynamic feature validation
     if (featureForm.featureType === 'Dynamic') {
-      return transformationLogic.trim().length > 0 && logicValidated && !logicError;
+      return featureForm.transformationLogic.trim().length > 0 && logicValidated && !logicError;
     }
     return true;
   };
-  const handleCreateFeature = () => {
-    if (!selectedViewForFeature || !isFeatureValid()) return;
-    setViews(prev => prev.map(v => v.name === selectedViewForFeature ? {
-      ...v,
-      features: [{
-        name: featureForm.name.trim(),
-        dataType: featureForm.dataType.trim(),
-        description: featureForm.description.trim(),
-  featureType: featureForm.featureType,
-  transformationLogic: featureForm.featureType === 'Dynamic' ? transformationLogic.trim() : undefined,
-  mapped_column: featureForm.mapped_column.trim()
-      }, ...v.features],
-      featureCount: v.featureCount + 1
-    } : v));
-    setFeatureDialogOpen(false);
-    resetFeatureForm();
-  };
-  // Naive Python syntax validation (basic structure & balance checks)
+
   const validatePythonLogic = (code: string): string | null => {
     if (!code.trim()) return 'Logic is required.';
-    // Disallow obvious JS/HTML injection markers
     if (/[<>]/.test(code)) return 'Angle brackets not allowed.';
+
     const pairs: Array<[string,string]> = [['(',')'],['[',']'],['{','}']];
     for (const [o,c] of pairs) {
       let bal = 0;
       for (const ch of code) {
-        if (ch === o) bal++; else if (ch === c) bal--;
+        if (ch === o) bal++;
+        else if (ch === c) bal--;
         if (bal < 0) return `Unbalanced ${o}${c} pair.`;
       }
       if (bal !== 0) return `Unbalanced ${o}${c} pair.`;
     }
-    // Quote balance (simple, ignores triple quotes edge cases)
+
     const single = (code.match(/(?<!\\)'/g) || []).length;
     const double = (code.match(/(?<!\\)"/g) || []).length;
     if (single % 2 !== 0) return 'Unmatched single quote.';
     if (double % 2 !== 0) return 'Unmatched double quote.';
-    // Must look like a Python expression or block (very loose)
-    if (!/(return|lambda|if |for |while |=|\+|\-|\*|\/)/.test(code)) {
-      // Accept simple attribute or function style too
-      if (!/^[a-zA-Z_][a-zA-Z0-9_\.]*$/.test(code.trim())) {
+
+    if (!/(?:return|lambda|if |for |while |=|\+|-|\*|\/)/.test(code)) {
+      if (!/^[a-zA-Z_][a-zA-Z0-9_.]*$/.test(code.trim())) {
         return 'Provide a valid Python expression or block.';
       }
     }
@@ -226,44 +326,225 @@ export default function FeatureStore() {
   };
 
   const handleValidateLogic = () => {
-    const err = validatePythonLogic(transformationLogic);
+    const err = validatePythonLogic(featureForm.transformationLogic);
     setLogicError(err);
     setLogicValidated(!err);
   };
 
+  // Duplicate validation functions
+  const checkFeatureGroupNameDuplicate = (name: string, excludeId?: string): string | null => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    const existing = metadata.featureGroups.find(group =>
+      group.name.toLowerCase() === trimmedName.toLowerCase() && group.id !== excludeId
+    );
+    return existing ? `Feature group "${trimmedName}" already exists` : null;
+  };
+
+  const checkFeatureNameDuplicate = (name: string, groupId: string, excludeId?: string): string | null => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    const group = metadata.featureGroups.find(g => g.id === groupId);
+    if (!group) return null;
+
+    const existing = group.features.find(feature =>
+      feature.name.toLowerCase() === trimmedName.toLowerCase() && feature.id !== excludeId
+    );
+    return existing ? `Feature "${trimmedName}" already exists in this group` : null;
+  };
+
+  const checkTransformedTableNameDuplicate = (name: string, excludeId?: string): string | null => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    const existing = metadata.transformedTables.find(table =>
+      table.name.toLowerCase() === trimmedName.toLowerCase() && table.id !== excludeId
+    );
+    return existing ? `Transformed table "${trimmedName}" already exists` : null;
+  };
+
+  const checkColumnNameDuplicate = (name: string, tableId: string, excludeName?: string): string | null => {
+    const trimmedName = name.trim();
+    if (!trimmedName) return null;
+
+    const table = metadata.transformedTables.find(t => t.id === tableId);
+    if (!table) return null;
+
+    const existing = table.columns.find(column =>
+      column.name.toLowerCase() === trimmedName.toLowerCase() && column.name !== excludeName
+    );
+    return existing ? `Column "${trimmedName}" already exists in this table` : null;
+  };
+
+  // Transform table name helper function
+  const createTableNameFromGroupName = (groupName: string): string => {
+    return groupName
+      .toLowerCase()
+      .replace(/[^a-z0-9]/g, '_')
+      .replace(/_+/g, '_')
+      .replace(/^_|_$/g, '');
+  };
+
+  // Handler for creating new transform table from group name
+  const handleCreateNewTransformTable = async (groupName: string): Promise<string> => {
+    const tableName = createTableNameFromGroupName(groupName);
+
+    try {
+      const updatedMetadata = await createTransformedTable(metadata, {
+        name: tableName,
+        description: `Transformed table for ${groupName} feature group`,
+        columns: []
+      });
+
+      setMetadata(updatedMetadata);
+
+      // Find the newly created table and return its ID
+      const newTable = updatedMetadata.transformedTables.find(t => t.name === tableName);
+      return newTable?.id || '';
+    } catch (error) {
+      console.error('Error creating transform table:', error);
+      return '';
+    }
+  };
+
   const toSentenceCase = (s: string) => s.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+
   const handleSourceColumnSelect = (val: string) => {
     setSourceColumnChoice(val);
     if (val === 'create-new') {
-      // allow manual entry for feature name, auto-generate mapped_column
       setFeatureForm(f => ({
         ...f,
         name: '',
         mapped_column: '',
-        dataType: '' // reset data type for new columns
+        dataType: 'text'
       }));
     } else if (val) {
-      // existing column selected - use column name as feature name, get data type from column info
-      const selectedView = views.find(v => v.name === selectedViewForFeature);
-      const transformTable = selectedView?.transformTable;
-      const columnInfo = transformTable ? transformTableColumns[transformTable]?.find(col => col.name === val) : null;
+      const selectedGroup = metadata.featureGroups.find(g => g.id === selectedGroupForFeature);
+      const transformTable = selectedGroup ? getTransformedTableById(metadata.transformedTables, selectedGroup.transformTableId) : null;
+      const columnInfo = transformTable?.columns.find(col => col.name === val);
 
       const sentenceName = toSentenceCase(val);
       setFeatureForm(f => ({
         ...f,
         name: sentenceName,
-        mapped_column: val, // use the actual column name as mapped_column
-        dataType: columnInfo?.dataType || '' // auto-populate data type from column info
+        mapped_column: val,
+        dataType: columnInfo?.dataType || 'text'
       }));
     }
   };
+
+  const openCreateFeature = (groupId: string) => {
+    setSelectedGroupForFeature(groupId);
+    resetFeatureForm();
+    setShowCreateFeatureDialog(true);
+    // Close group overlay if open
+    setGroupOverlay(null);
+  };
+
+  const openGlobalCreateFeature = () => {
+    setSelectedGroupForFeature(null);
+    setFeatureCreationType(null);
+    setSelectedSourceTable('');
+    setSelectedColumns([]);
+    resetFeatureForm();
+    setShowCreateFeatureDialog(true);
+  };
+
+  const openGroupCreateFeature = (groupId: string) => {
+    setSelectedGroupForFeature(groupId);
+    setFeatureCreationType(null);
+    setSelectedSourceTable('');
+    setSelectedColumns([]);
+    resetFeatureForm();
+    setShowCreateFeatureDialog(true);
+  };
+
+  // Helper function to generate feature name from column name
+  const generateFeatureName = (columnName: string): string => {
+    return columnName
+      .split('_')
+      .map(word => word.charAt(0).toUpperCase() + word.slice(1))
+      .join(' ');
+  };
+
+  // Handle column selection for direct features
+  const handleColumnToggle = (columnName: string) => {
+    setSelectedColumns(prev =>
+      prev.includes(columnName)
+        ? prev.filter(col => col !== columnName)
+        : [...prev, columnName]
+    );
+  };
+
+  // Handle creating multiple direct features from selected columns
+  const handleCreateDirectFeatures = async () => {
+    if (!selectedGroupForFeature || !selectedSourceTable || selectedColumns.length === 0) return;
+
+    try {
+      const sourceTable = getTransformedTableById(metadata.transformedTables, selectedSourceTable);
+      if (!sourceTable) return;
+
+      let updatedMetadata = metadata;
+      const duplicateFeatures = [];
+
+      // Check for duplicate feature names first
+      for (const columnName of selectedColumns) {
+        const featureName = generateFeatureName(columnName);
+        const duplicateError = checkFeatureNameDuplicate(featureName, selectedGroupForFeature);
+        if (duplicateError) {
+          duplicateFeatures.push(`${featureName} (from ${columnName})`);
+        }
+      }
+
+      // If any duplicates found, show error and stop
+      if (duplicateFeatures.length > 0) {
+        setFeatureNameError(`The following features already exist: ${duplicateFeatures.join(', ')}`);
+        return;
+      }
+
+      // Create a feature for each selected column
+      for (const columnName of selectedColumns) {
+        const column = sourceTable.columns.find(col => col.name === columnName);
+        if (!column) continue;
+
+        const featureName = generateFeatureName(columnName);
+        const transformation = `Source: ${sourceTable.name}, Column: ${columnName}`;
+
+        updatedMetadata = await addFeatureToGroup(updatedMetadata, selectedGroupForFeature, {
+          name: featureName,
+          dataType: column.dataType,
+          description: column.description || `Direct mapping from ${columnName}`,
+          featureType: 'Direct',
+          transformation,
+          mapped_column: columnName
+        });
+      }
+
+      setMetadata(updatedMetadata);
+      setShowCreateFeatureDialog(false);
+      resetFeatureForm();
+      setSelectedGroupForFeature(null);
+      setFeatureCreationType(null);
+      setSelectedSourceTable('');
+      setSelectedColumns([]);
+    } catch (error) {
+      console.error('Failed to create direct features:', error);
+    }
+  };
+
   // Flatten all features for the Features view
-  const allFeaturesFlat = views.flatMap(v => v.features.map(feat => ({
-    view: v.name,
-    transformTable: v.transformTable,
-    keyColumn: v.keyColumn,
-    ...feat
-  })));
+  const allFeaturesFlat = metadata.featureGroups.flatMap(group =>
+    group.features.map(feat => ({
+      group: group.name,
+      groupId: group.id,
+      transformTable: getTransformedTableById(metadata.transformedTables, group.transformTableId)?.name || 'Unknown',
+      keyColumn: group.keyColumn,
+      ...feat
+    }))
+  );
+
   return (
     <div className="space-y-6">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -287,7 +568,7 @@ export default function FeatureStore() {
             >Features</button>
           </div>
           {viewMode === 'groups' && (
-            <Dialog open={open} onOpenChange={setOpen}>
+            <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
               <DialogTrigger asChild>
                 <Button className="self-start">Create Feature Group</Button>
               </DialogTrigger>
@@ -299,39 +580,64 @@ export default function FeatureStore() {
                 <div className="space-y-4">
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Transform Table</label>
-                    <Select value={form.transformTable} onValueChange={v => setForm(f => ({ ...f, transformTable: v }))}>
+                    <Select
+                      value={groupForm.transformTableId}
+                      onValueChange={(v) => {
+                        setGroupForm(f => ({ ...f, transformTableId: v }));
+                      }}
+                      defaultValue="CREATE_NEW"
+                    >
                       <SelectTrigger className="h-8 text-xs">
-                        <SelectValue placeholder="Create new Transform Table" />
+                        <SelectValue placeholder="+ Create New Transform Table" />
                       </SelectTrigger>
                       <SelectContent>
-                        <SelectItem value="__new__">Create new Transform Table</SelectItem>
-                        {transformedTables.map(tt => (
-                          <SelectItem key={tt} value={tt}>{tt}</SelectItem>
+                        <SelectItem value="CREATE_NEW" className="text-blue-600 font-medium">
+                          + Create New Transform Table
+                          {groupForm.name.trim() && (
+                            <span className="text-xs text-muted-foreground ml-1">
+                              ({createTableNameFromGroupName(groupForm.name)})
+                            </span>
+                          )}
+                        </SelectItem>
+                        {metadata.transformedTables.map(table => (
+                          <SelectItem key={table.id} value={table.id}>{table.name}</SelectItem>
                         ))}
                       </SelectContent>
                     </Select>
                   </div>
-                  {form.transformTable === '__new__' && (
-                    <div className="space-y-1">
-                      <label className="text-xs font-medium">New Transform Table Name</label>
-                      <Input value={form.newTransformTable} onChange={e => setForm(f => ({ ...f, newTransformTable: e.target.value }))} placeholder="e.g. transformed_user_activity" />
-                    </div>
-                  )}
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Name</label>
-                    <Input value={form.name} onChange={e => setForm(f => ({ ...f, name: e.target.value }))} placeholder="e.g. snow_incident_metrics_x" />
+                    <Input
+                      value={groupForm.name}
+                      onChange={e => {
+                        const value = e.target.value;
+                        setGroupForm(f => ({ ...f, name: value }));
+                        // Clear error when user starts typing
+                        if (groupNameError) setGroupNameError(null);
+                      }}
+                      onBlur={() => {
+                        // Check for duplicates when user leaves the field
+                        const error = checkFeatureGroupNameDuplicate(groupForm.name);
+                        setGroupNameError(error);
+                      }}
+                      placeholder="e.g. User Behavior Metrics"
+                      className={groupNameError ? "border-red-500" : ""}
+                    />
+                    {groupNameError && (
+                      <p className="text-xs text-red-600">{groupNameError}</p>
+                    )}
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Description</label>
-                    <Textarea rows={3} value={form.description} onChange={e => setForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature group" className="text-sm" />
+                    <Textarea rows={3} value={groupForm.description} onChange={e => setGroupForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature group" className="text-sm" />
                   </div>
                   <div className="space-y-1">
                     <label className="text-xs font-medium">Key Column</label>
-                    <Input value={form.keyColumn} onChange={e => setForm(f => ({ ...f, keyColumn: e.target.value }))} />
+                    <Input value={groupForm.keyColumn} onChange={e => setGroupForm(f => ({ ...f, keyColumn: e.target.value }))} placeholder="e.g. user_id" />
                   </div>
                   <div className="flex justify-end gap-2 pt-2">
-                    <Button variant="outline" onClick={() => setOpen(false)} size="sm">Cancel</Button>
-                    <Button size="sm" onClick={handleCreate} disabled={!isValid()}>Create</Button>
+                    <Button variant="outline" onClick={() => setShowCreateGroupDialog(false)} size="sm">Cancel</Button>
+                    <Button size="sm" onClick={handleCreateGroup} disabled={!groupForm.name.trim() || !!groupNameError}>Create</Button>
                   </div>
                 </div>
               </DialogContent>
@@ -342,86 +648,45 @@ export default function FeatureStore() {
           )}
         </div>
       </div>
+
       {viewMode === 'groups' && (
         <div className="grid gap-6 md:grid-cols-2 lg:grid-cols-3">
-          {views.map(fv => {
-            const isExpanded = expanded.has(fv.name);
+          {metadata.featureGroups.map(group => {
+            const transformTable = getTransformedTableById(metadata.transformedTables, group.transformTableId);
             return (
-              <Card key={fv.name} className={`transition-shadow flex flex-col ${isExpanded ? 'ring-1 ring-primary/40 shadow-md' : 'hover:shadow-md'}`}>
-                <button
-                  type="button"
-                  onClick={() => toggleExpanded(fv.name)}
-                  className="text-left w-full"
-                >
+              <Card key={group.id} className="transition-shadow flex flex-col hover:shadow-md cursor-pointer" onClick={() => openGroupOverlay(group)}>
+                <div className="text-left w-full">
                   <CardHeader className="pb-3">
                     <div className="flex items-start justify-between gap-2">
                       <div className="space-y-1 min-w-0">
                         <CardTitle className="text-base font-semibold break-all flex items-center gap-2">
-                          <span>{fv.name}</span>
-                          <span className="text-[10px] font-normal text-muted-foreground">{isExpanded ? 'Hide' : 'Show'} features</span>
+                          <span>{group.name}</span>
+                          <span className="text-[10px] font-normal text-muted-foreground">Click for details</span>
                         </CardTitle>
                         <CardDescription className="text-xs line-clamp-3 leading-relaxed">
-                          {fv.description}
+                          {group.description}
                         </CardDescription>
                       </div>
-                      <Badge variant="secondary" className="shrink-0">{fv.featureCount} {fv.featureCount === 1 ? 'feature' : 'features'}</Badge>
+                      <Badge variant="secondary" className="shrink-0">{group.features.length} {group.features.length === 1 ? 'feature' : 'features'}</Badge>
                     </div>
                   </CardHeader>
-                </button>
+                </div>
                 <CardContent className="text-xs text-muted-foreground grid grid-cols-2 gap-x-4 gap-y-2">
                   <div>
                     <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Key Column</div>
-                    <div className="font-mono text-[11px]">{fv.keyColumn}</div>
+                    <div className="font-mono text-[11px]">{group.keyColumn}</div>
                   </div>
                   <div>
                     <div className="font-medium text-foreground/80 text-[11px] tracking-wide uppercase">Transform Table</div>
-                    <div className="font-mono text-[11px]">{fv.transformTable}</div>
+                    <div className="font-mono text-[11px]">{transformTable?.name || 'Unknown'}</div>
                   </div>
                 </CardContent>
-                {isExpanded && (
-                  <div className="px-4 pb-4">
-                    <div className="flex items-center justify-between mb-2">
-                      <h4 className="text-[11px] font-semibold tracking-wide uppercase text-foreground/70">Features</h4>
-                      <Button size="sm" variant="outline" className="h-7 px-2 text-[11px]" onClick={() => openCreateFeature(fv.name)}>Create Feature</Button>
-                    </div>
-                    <div className="border rounded-md overflow-auto max-h-64">
-                      <table className="w-full min-w-[640px] text-[11px]">
-                        <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
-                          <tr className="text-left">
-                            <th className="px-2 py-1 font-medium">Name</th>
-                            <th className="px-2 py-1 font-medium">Mapped Column</th>
-                            <th className="px-2 py-1 font-medium">Data Type</th>
-                            <th className="px-2 py-1 font-medium">Description</th>
-                            <th className="px-2 py-1 font-medium">Feature Type</th>
-                          </tr>
-                        </thead>
-                        <tbody>
-                          {fv.features.map(feat => (
-                            <tr key={feat.name} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: fv.name, feature: feat })}>
-                              <td className="px-2 py-1 font-mono text-[10px]">{feat.name}</td>
-                              <td className="px-2 py-1 font-mono text-[10px] text-muted-foreground">{feat.mapped_column}</td>
-                              <td className="px-2 py-1">{feat.dataType}</td>
-                              <td className="px-2 py-1 max-w-[220px] truncate" title={feat.description}>{feat.description}</td>
-                              <td className="px-2 py-1">
-                                <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${feat.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{feat.featureType}</span>
-                              </td>
-                            </tr>
-                          ))}
-                          {!fv.features.length && (
-                            <tr>
-                              <td colSpan={5} className="px-2 py-4 text-center text-muted-foreground">No features yet.</td>
-                            </tr>
-                          )}
-                        </tbody>
-                      </table>
-                    </div>
-                  </div>
-                )}
               </Card>
             );
           })}
         </div>
       )}
+
       {viewMode === 'features' && (
         <div className="space-y-3">
           <div className="text-[11px] text-muted-foreground">{allFeaturesFlat.length} feature{allFeaturesFlat.length === 1 ? '' : 's'}</div>
@@ -430,30 +695,80 @@ export default function FeatureStore() {
               <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
                 <tr className="text-left">
                   <th className="px-2 py-1 font-medium">Feature Name</th>
-                  <th className="px-2 py-1 font-medium">Mapped Column</th>
+                  <th className="px-2 py-1 font-medium">Description</th>
                   <th className="px-2 py-1 font-medium">Data Type</th>
                   <th className="px-2 py-1 font-medium">Feature Type</th>
                   <th className="px-2 py-1 font-medium">Group</th>
                   <th className="px-2 py-1 font-medium">Transform Table</th>
                   <th className="px-2 py-1 font-medium">Key Column</th>
-                  <th className="px-2 py-1 font-medium">Description</th>
+                  <th className="px-2 py-1 font-medium">Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {allFeaturesFlat.map(f => (
-                  <tr key={`${f.view}::${f.name}`} className="border-t hover:bg-muted/40 cursor-pointer" onClick={() => setFeatureOverlay({ view: f.view, feature: { name: f.name, dataType: f.dataType, description: f.description, featureType: f.featureType, transformationLogic: f.transformationLogic, mapped_column: f.mapped_column } })}>
-                    <td className="px-2 py-1 font-mono text-[10px]">{f.name}</td>
-                    <td className="px-2 py-1 font-mono text-[10px] text-muted-foreground">{f.mapped_column}</td>
-                    <td className="px-2 py-1">{f.dataType}</td>
-                    <td className="px-2 py-1">
-                      <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${f.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{f.featureType}</span>
-                    </td>
-                    <td className="px-2 py-1 font-mono text-[10px]">{f.view}</td>
-                    <td className="px-2 py-1 font-mono text-[10px]">{f.transformTable}</td>
-                    <td className="px-2 py-1 font-mono text-[10px]">{f.keyColumn}</td>
-                    <td className="px-2 py-1 max-w-[320px] truncate" title={f.description}>{f.description}</td>
-                  </tr>
-                ))}
+                {allFeaturesFlat.map(f => {
+                  const group = metadata.featureGroups.find(g => g.id === f.groupId);
+                  return (
+                    <tr key={`${f.groupId}::${f.id}`} className="border-t hover:bg-muted/40">
+                      <td className="px-2 py-1 font-mono text-[10px] cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.name}</td>
+                      <td className="px-2 py-1 max-w-[320px] truncate cursor-pointer" title={f.description} onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.description}</td>
+                      <td className="px-2 py-1 cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.dataType}</td>
+                      <td className="px-2 py-1 cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>
+                        <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${
+                          f.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' :
+                          f.featureType === 'Direct' ? 'bg-green-50 text-green-700 border-green-200' :
+                          'bg-amber-50 text-amber-700 border-amber-200'
+                        }`}>{f.featureType}</span>
+                      </td>
+                      <td className="px-2 py-1 font-mono text-[10px] cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.group}</td>
+                      <td className="px-2 py-1 font-mono text-[10px] cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.transformTable}</td>
+                      <td className="px-2 py-1 font-mono text-[10px] cursor-pointer" onClick={() => {
+                        if (group) setFeatureOverlay({ group, feature: f });
+                      }}>{f.keyColumn}</td>
+                      <td className="px-2 py-1">
+                        <div className="flex gap-1">
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-[10px]"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (group) {
+                                handleEditFeature({ feature: f, group });
+                              }
+                            }}
+                          >
+                            ✏️
+                          </Button>
+                          <Button
+                            size="sm"
+                            variant="ghost"
+                            className="h-6 w-6 p-0 text-[10px] text-red-600 hover:text-red-700"
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              if (group) {
+                                setShowDeleteFeatureDialog({ feature: f, group });
+                              }
+                            }}
+                          >
+                            🗑️
+                          </Button>
+                        </div>
+                      </td>
+                    </tr>
+                  );
+                })}
                 {!allFeaturesFlat.length && (
                   <tr>
                     <td colSpan={8} className="px-2 py-6 text-center text-muted-foreground">No features available.</td>
@@ -465,138 +780,440 @@ export default function FeatureStore() {
         </div>
       )}
 
+      {metadata.featureGroups.length === 0 && viewMode === 'groups' && (
+        <Card>
+          <CardContent className="text-center py-12">
+            <h3 className="text-lg font-semibold mb-2">No Feature Groups</h3>
+            <p className="text-muted-foreground text-sm mb-4">Get started by creating your first feature group.</p>
+            <Button onClick={() => setShowCreateGroupDialog(true)}>Create Feature Group</Button>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Create Feature Dialog */}
-      <Dialog open={featureDialogOpen} onOpenChange={setFeatureDialogOpen}>
+      <Dialog open={showCreateFeatureDialog} onOpenChange={setShowCreateFeatureDialog}>
         <DialogContent>
           <DialogHeader>
-            <DialogTitle>Create Feature</DialogTitle>
+            <DialogTitle>{isEditMode ? 'Edit Feature' : 'Create Feature'}</DialogTitle>
             <DialogDescription>
-              {selectedViewForFeature ? (
-                <>Add a new feature to {selectedViewForFeature}</>
+              {selectedGroupForFeature ? (
+                isEditMode
+                  ? <>Edit feature in {metadata.featureGroups.find(g => g.id === selectedGroupForFeature)?.name}</>
+                  : <>Add a new feature to {metadata.featureGroups.find(g => g.id === selectedGroupForFeature)?.name}</>
               ) : (
-                <>Select a feature group and define the feature.</>
+                isEditMode
+                  ? <>Edit the selected feature</>
+                  : <>Select a feature group and define the feature.</>
               )}
             </DialogDescription>
           </DialogHeader>
           <div className="space-y-4 text-sm">
-            {!selectedViewForFeature && (
+            {/* Step 1: Feature Group Selection */}
+            {!selectedGroupForFeature && (
               <div className="space-y-1">
                 <label className="text-xs font-medium">Feature Group</label>
-                <Select value={selectedViewForFeature || ''} onValueChange={v => setSelectedViewForFeature(v)}>
+                <Select value={selectedGroupForFeature || ''} onValueChange={v => setSelectedGroupForFeature(v)}>
                   <SelectTrigger className="h-8 text-xs">
                     <SelectValue placeholder="Select feature group" />
                   </SelectTrigger>
                   <SelectContent>
-                    {views.map(v => <SelectItem key={v.name} value={v.name}>{v.name}</SelectItem>)}
+                    {metadata.featureGroups.map(group => <SelectItem key={group.id} value={group.id}>{group.name}</SelectItem>)}
                   </SelectContent>
                 </Select>
               </div>
             )}
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Source Column</label>
-              <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect} disabled={!selectedViewForFeature}>
-                <SelectTrigger className="h-8 text-xs">
-                  <SelectValue placeholder="Select source column or create new" />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="create-new">Create new column</SelectItem>
-                  {(selectedViewForFeature ? transformTableColumns[views.find(v => v.name === selectedViewForFeature)?.transformTable || ''] || [] : []).map(col => (
-                    <SelectItem key={col.name} value={col.name}>{col.name} ({col.dataType})</SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {!selectedViewForFeature && <p className="text-[10px] text-muted-foreground">Select a feature group first.</p>}
-            </div>
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Feature Name</label>
-              <Input
-                value={featureForm.name}
-                onChange={e => {
-                  const name = e.target.value;
-                  // Only auto-generate mapped_column if "Create new column" is selected
-                  if (sourceColumnChoice === 'create-new') {
-                    const mappedColumn = name.toLowerCase().replace(/\s+/g, '_');
-                    setFeatureForm(f => ({ ...f, name, mapped_column: mappedColumn }));
-                  } else {
-                    setFeatureForm(f => ({ ...f, name }));
-                  }
-                }}
-                placeholder="Readable feature name"
-                disabled={!selectedViewForFeature}
-              />
-              {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
-                <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
-              )}
-            </div>
-            {/* Show mapped column field based on source column selection */}
-            {sourceColumnChoice === 'create-new' && (
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Mapped Column</label>
-                <Input
-                  value={featureForm.mapped_column}
-                  onChange={e => setFeatureForm(f => ({ ...f, mapped_column: e.target.value }))}
-                  placeholder="e.g. change_lead_duration"
-                  className="font-mono text-xs bg-muted"
-                  disabled={true}
-                />
-                <p className="text-[10px] text-muted-foreground">Auto-generated from feature name (lowercase with underscores)</p>
-              </div>
-            )}
-            <div className="space-y-1">
-              <label className="text-xs font-medium">Description</label>
-              <Textarea rows={3} value={featureForm.description} onChange={e => setFeatureForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature" className="text-xs" />
-            </div>
-            <div className="grid grid-cols-2 gap-4">
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Data Type</label>
-                <Select value={featureForm.dataType} onValueChange={v => setFeatureForm(f => ({ ...f, dataType: v }))}>
-                  <SelectTrigger className="h-8 text-xs">
-                    <SelectValue placeholder="Select data type" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="int">int</SelectItem>
-                    <SelectItem value="float">float</SelectItem>
-                    <SelectItem value="datetime">datetime</SelectItem>
-                    <SelectItem value="text">text</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className="space-y-1">
-                <label className="text-xs font-medium">Feature Type</label>
-                <Select value={featureForm.featureType} onValueChange={v => { setFeatureForm(f => ({ ...f, featureType: v as 'Calculated' | 'Dynamic' })); setLogicValidated(false); setLogicError(null); }}>
-                  <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="Calculated">Calculated</SelectItem>
-                    <SelectItem value="Dynamic">Dynamic</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
-            </div>
-            {featureForm.featureType === 'Dynamic' && (
-              <div className="space-y-1">
-                <label className="text-xs font-medium flex items-center justify-between">Transformation Logic (Python)
-                  {logicValidated && !logicError && <span className="text-[10px] text-green-600">Validated</span>}
-                </label>
-                <Textarea rows={5} value={transformationLogic} onChange={e => { setTransformationLogic(e.target.value); setLogicValidated(false); setLogicError(null); }} placeholder="e.g. (risk_score / (avg_lead_time_hours + 1)) * 100" className="font-mono text-[11px]" />
-                {logicError && <p className="text-[10px] text-red-600">{logicError}</p>}
-                {!logicError && logicValidated && <p className="text-[10px] text-green-600">Syntax looks good.</p>}
-                {!logicValidated && !logicError && transformationLogic && <p className="text-[10px] text-amber-600">Needs validation.</p>}
-                <div className="flex gap-2 pt-1">
-                  <Button type="button" size="sm" variant="secondary" onClick={handleValidateLogic} disabled={!transformationLogic.trim()}>Validate</Button>
+
+            {/* Step 2: Feature Type Selection */}
+            {selectedGroupForFeature && !featureCreationType && (
+              <div className="space-y-4">
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Feature Type</label>
+                  <p className="text-[10px] text-muted-foreground">Choose how you want to create features</p>
+                </div>
+                <div className="grid grid-cols-1 gap-3">
+                  <button
+                    onClick={() => setFeatureCreationType('direct')}
+                    className="p-4 border rounded-lg text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="font-medium text-sm">Direct Feature</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Map columns directly from transformed tables. Select multiple columns to create multiple features.
+                    </div>
+                  </button>
+                  <button
+                    onClick={() => setFeatureCreationType('calculated')}
+                    className="p-4 border rounded-lg text-left hover:bg-muted/50 transition-colors"
+                  >
+                    <div className="font-medium text-sm">Calculated Feature</div>
+                    <div className="text-xs text-muted-foreground mt-1">
+                      Create a single feature with custom logic and transformations.
+                    </div>
+                  </button>
                 </div>
               </div>
             )}
-            {featureForm.featureType === 'Calculated' && (
-              <div className="text-[11px] text-muted-foreground border rounded-md p-2 bg-muted/40">Data map screen will show here</div>
+
+            {/* Step 3a: Direct Feature Form */}
+            {selectedGroupForFeature && featureCreationType === 'direct' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFeatureCreationType(null)}
+                    className="text-xs"
+                  >
+                    ← Back
+                  </Button>
+                  <div className="text-xs font-medium">Direct Feature Creation</div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Source Table</label>
+                  <Select value={selectedSourceTable} onValueChange={setSelectedSourceTable}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select source table" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {metadata.transformedTables.map(table => (
+                        <SelectItem key={table.id} value={table.id}>{table.name}</SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                {selectedSourceTable && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">
+                      {isEditMode ? 'Select Column' : 'Select Columns'}
+                    </label>
+                    <p className="text-[10px] text-muted-foreground">
+                      {isEditMode ? 'Choose the column for this feature' : 'Choose columns to create features from'}
+                    </p>
+                    <div className="border rounded-md p-3 max-h-64 overflow-y-auto">
+                      {(() => {
+                        const sourceTable = getTransformedTableById(metadata.transformedTables, selectedSourceTable);
+                        if (!sourceTable) return <p className="text-xs text-muted-foreground">No columns available</p>;
+
+                        return sourceTable.columns.map(column => (
+                          <div key={column.name} className="flex items-center space-x-2 py-2">
+                            <input
+                              type={isEditMode ? "radio" : "checkbox"}
+                              name={isEditMode ? "selectedColumn" : undefined}
+                              id={column.name}
+                              checked={selectedColumns.includes(column.name)}
+                              onChange={() => {
+                                if (isEditMode) {
+                                  // Single select for edit mode
+                                  setSelectedColumns([column.name]);
+                                } else {
+                                  // Multi-select for create mode
+                                  handleColumnToggle(column.name);
+                                }
+                              }}
+                              className="w-4 h-4"
+                            />
+                            <label htmlFor={column.name} className="flex-1 text-xs cursor-pointer">
+                              <div className="font-mono">{column.name}</div>
+                              <div className="text-muted-foreground">
+                                {column.dataType} • {column.description || 'No description'}
+                              </div>
+                            </label>
+                          </div>
+                        ));
+                      })()}
+                    </div>
+                    {selectedColumns.length > 0 && (
+                      <div className="text-xs text-muted-foreground">
+                        {isEditMode
+                          ? `Selected column: ${selectedColumns[0]}`
+                          : `${selectedColumns.length} column${selectedColumns.length === 1 ? '' : 's'} selected. Features will be created with auto-generated names.`
+                        }
+                      </div>
+                    )}
+                  </div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowCreateFeatureDialog(false)}>Cancel</Button>
+                  <Button
+                    size="sm"
+                    onClick={isEditMode ? handleCreateFeature : handleCreateDirectFeatures}
+                    disabled={!selectedSourceTable || selectedColumns.length === 0}
+                  >
+                    {isEditMode
+                      ? 'Update Feature'
+                      : `Create ${selectedColumns.length} Feature${selectedColumns.length === 1 ? '' : 's'}`
+                    }
+                  </Button>
+                </div>
+              </div>
             )}
-            <div className="flex justify-end gap-2 pt-2">
-              <Button variant="outline" size="sm" onClick={() => setFeatureDialogOpen(false)}>Cancel</Button>
-              <Button size="sm" onClick={handleCreateFeature} disabled={!selectedViewForFeature || !isFeatureValid()}>Save</Button>
-            </div>
+
+            {/* Step 3b: Calculated Feature Form */}
+            {selectedGroupForFeature && featureCreationType === 'calculated' && (
+              <div className="space-y-4">
+                <div className="flex items-center gap-2">
+                  <Button
+                    variant="ghost"
+                    size="sm"
+                    onClick={() => setFeatureCreationType(null)}
+                    className="text-xs"
+                  >
+                    ← Back
+                  </Button>
+                  <div className="text-xs font-medium">Calculated Feature Creation</div>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Source Column</label>
+                  <Select value={sourceColumnChoice} onValueChange={handleSourceColumnSelect}>
+                    <SelectTrigger className="h-8 text-xs">
+                      <SelectValue placeholder="Select source column or create new" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="create-new">Create new column</SelectItem>
+                      {selectedGroupForFeature && (() => {
+                        const group = metadata.featureGroups.find(g => g.id === selectedGroupForFeature);
+                        const table = group ? getTransformedTableById(metadata.transformedTables, group.transformTableId) : null;
+                        return table?.columns.map(col => (
+                          <SelectItem key={col.name} value={col.name}>{col.name} ({col.dataType})</SelectItem>
+                        )) || [];
+                      })()}
+                    </SelectContent>
+                  </Select>
+                </div>
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Feature Name</label>
+                  <Input
+                    value={featureForm.name}
+                    onChange={e => {
+                      const name = e.target.value;
+                      // Clear error when user starts typing
+                      if (featureNameError) setFeatureNameError(null);
+
+                      if (sourceColumnChoice === 'create-new') {
+                        const mappedColumn = name.toLowerCase().replace(/\\s+/g, '_');
+                        setFeatureForm(f => ({
+                          ...f,
+                          name: name,
+                          mapped_column: mappedColumn
+                        }));
+                      } else {
+                        setFeatureForm(f => ({ ...f, name }));
+                      }
+                    }}
+                    onBlur={() => {
+                      // Check for duplicates when user leaves the field
+                      if (selectedGroupForFeature) {
+                        const excludeId = isEditMode && editingFeature ? editingFeature.feature.id : undefined;
+                        const error = checkFeatureNameDuplicate(featureForm.name, selectedGroupForFeature, excludeId);
+                        setFeatureNameError(error);
+                      }
+                    }}
+                    placeholder="Readable feature name"
+                    className={featureNameError ? "border-red-500" : ""}
+                  />
+                  {featureNameError && (
+                    <p className="text-xs text-red-600">{featureNameError}</p>
+                  )}
+                  {!!sourceColumnChoice && sourceColumnChoice !== 'create-new' && (
+                    <p className="text-[10px] text-muted-foreground">Auto-generated from column. Choose "Create new column" to type a custom name.</p>
+                  )}
+                </div>
+
+                {sourceColumnChoice === 'create-new' && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Mapped Column</label>
+                    <Input
+                      value={featureForm.mapped_column}
+                      onChange={e => setFeatureForm(f => ({ ...f, mapped_column: e.target.value }))}
+                      placeholder="e.g. change_lead_duration"
+                      className="font-mono text-xs bg-muted"
+                      disabled={true}
+                    />
+                    <p className="text-[10px] text-muted-foreground">Auto-generated from feature name (lowercase with underscores)</p>
+                  </div>
+                )}
+
+                <div className="space-y-1">
+                  <label className="text-xs font-medium">Description</label>
+                  <Textarea rows={3} value={featureForm.description} onChange={e => setFeatureForm(f => ({ ...f, description: e.target.value }))} placeholder="Short description of the feature" className="text-xs" />
+                </div>
+
+                <div className="grid grid-cols-2 gap-4">
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Data Type</label>
+                    <Select value={featureForm.dataType} onValueChange={v => setFeatureForm(f => ({ ...f, dataType: v as any }))}>
+                      <SelectTrigger className="h-8 text-xs">
+                        <SelectValue placeholder="Select data type" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="int">int</SelectItem>
+                        <SelectItem value="float">float</SelectItem>
+                        <SelectItem value="datetime">datetime</SelectItem>
+                        <SelectItem value="text">text</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium">Feature Type</label>
+                    <Select value={featureForm.featureType} onValueChange={v => { setFeatureForm(f => ({ ...f, featureType: v as any })); setLogicValidated(false); setLogicError(null); }}>
+                      <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="Calculated">Calculated</SelectItem>
+                        <SelectItem value="Dynamic">Dynamic</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
+
+                {featureForm.featureType === 'Dynamic' && (
+                  <div className="space-y-1">
+                    <label className="text-xs font-medium flex items-center justify-between">Transformation Logic (Python)
+                      {logicValidated && !logicError && <span className="text-[10px] text-green-600">Validated</span>}
+                    </label>
+                    <Textarea rows={5} value={featureForm.transformationLogic} onChange={e => { setFeatureForm(f => ({ ...f, transformationLogic: e.target.value })); setLogicValidated(false); setLogicError(null); }} placeholder="e.g. (risk_score / (avg_lead_time_hours + 1)) * 100" className="font-mono text-[11px]" />
+                    {logicError && <p className="text-[10px] text-red-600">{logicError}</p>}
+                    {!logicError && logicValidated && <p className="text-[10px] text-green-600">Syntax looks good.</p>}
+                    {!logicValidated && !logicError && featureForm.transformationLogic && <p className="text-[10px] text-amber-600">Needs validation.</p>}
+                    <div className="flex gap-2 pt-1">
+                      <Button type="button" size="sm" variant="secondary" onClick={handleValidateLogic} disabled={!featureForm.transformationLogic.trim()}>Validate</Button>
+                    </div>
+                  </div>
+                )}
+
+                {featureForm.featureType === 'Calculated' && (
+                  <div className="text-[11px] text-muted-foreground border rounded-md p-2 bg-muted/40">Data map screen will show here</div>
+                )}
+
+                <div className="flex justify-end gap-2 pt-2">
+                  <Button variant="outline" size="sm" onClick={() => setShowCreateFeatureDialog(false)}>Cancel</Button>
+                  <Button size="sm" onClick={handleCreateFeature} disabled={!selectedGroupForFeature || !isFeatureValid() || !!featureNameError}>
+                    {isEditMode ? 'Update Feature' : 'Save'}
+                  </Button>
+                </div>
+              </div>
+            )}
           </div>
         </DialogContent>
       </Dialog>
 
+      {/* Group Overlay */}
+      {groupOverlay && (
+        <div className="fixed inset-0 z-50">
+          <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setGroupOverlay(null)} />
+          <div className="absolute top-0 right-0 h-full w-[75vw] max-w-[1200px] bg-background border-l shadow-xl flex flex-col animate-in slide-in-from-right">
+            <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/40">
+              <div>
+                <h2 className="text-lg font-semibold">Feature Group: {groupOverlay.name}</h2>
+                <p className="text-xs text-muted-foreground">
+                  {groupOverlay.features.length} feature{groupOverlay.features.length === 1 ? '' : 's'} • Key: {groupOverlay.keyColumn}
+                </p>
+              </div>
+              <button onClick={() => setGroupOverlay(null)} className="p-2 rounded-md hover:bg-muted text-muted-foreground">Close</button>
+            </div>
+            <div className="flex-1 overflow-auto p-6 space-y-6 text-sm">
+              <section className="space-y-2">
+                <h3 className="font-medium text-foreground/80">Overview</h3>
+                <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs">
+                  <div><div className="text-muted-foreground">Name</div><div className="font-mono text-[11px]">{groupOverlay.name}</div></div>
+                  <div><div className="text-muted-foreground">Key Column</div><div className="font-mono text-[11px]">{groupOverlay.keyColumn}</div></div>
+                  <div><div className="text-muted-foreground">Transform Table</div><div className="font-mono text-[11px]">{getTransformedTableById(metadata.transformedTables, groupOverlay.transformTableId)?.name || 'Unknown'}</div></div>
+                </div>
+                <div>
+                  <div className="text-muted-foreground mb-1">Description</div>
+                  <p className="text-xs leading-relaxed max-w-prose">{groupOverlay.description}</p>
+                </div>
+              </section>
+
+              <section className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <h3 className="font-medium text-foreground/80">Features ({groupOverlay.features.length})</h3>
+                  <Button size="sm" onClick={() => openGroupCreateFeature(groupOverlay.id)}>New Feature</Button>
+                </div>
+
+                {groupOverlay.features.length > 0 ? (
+                  <div className="border rounded-md overflow-auto max-h-96">
+                    <table className="w-full text-[11px]">
+                      <thead className="bg-muted/50 text-[10px] uppercase tracking-wide">
+                        <tr className="text-left">
+                          <th className="px-3 py-2 font-medium">Name</th>
+                          <th className="px-3 py-2 font-medium">Description</th>
+                          <th className="px-3 py-2 font-medium">Data Type</th>
+                          <th className="px-3 py-2 font-medium">Feature Type</th>
+                          <th className="px-3 py-2 font-medium">Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {groupOverlay.features.map(feat => (
+                          <tr key={feat.id} className="border-t hover:bg-muted/40">
+                            <td className="px-3 py-2 font-mono text-[10px] cursor-pointer" onClick={() => setFeatureOverlay({ group: groupOverlay, feature: feat })}>{feat.name}</td>
+                            <td className="px-3 py-2 max-w-[280px] truncate cursor-pointer" title={feat.description} onClick={() => setFeatureOverlay({ group: groupOverlay, feature: feat })}>{feat.description}</td>
+                            <td className="px-3 py-2 cursor-pointer" onClick={() => setFeatureOverlay({ group: groupOverlay, feature: feat })}>{feat.dataType}</td>
+                            <td className="px-3 py-2 cursor-pointer" onClick={() => setFeatureOverlay({ group: groupOverlay, feature: feat })}>
+                              <span className={`inline-flex items-center rounded px-1.5 py-0.5 border text-[10px] ${feat.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : feat.featureType === 'Direct' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{feat.featureType}</span>
+                            </td>
+                            <td className="px-3 py-2">
+                              <div className="flex gap-1">
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-[10px]"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    handleEditFeature({ feature: feat, group: groupOverlay });
+                                  }}
+                                >
+                                  ✏️
+                                </Button>
+                                <Button
+                                  size="sm"
+                                  variant="ghost"
+                                  className="h-6 w-6 p-0 text-[10px] text-red-600 hover:text-red-700"
+                                  onClick={(e) => {
+                                    e.stopPropagation();
+                                    setShowDeleteFeatureDialog({ feature: feat, group: groupOverlay });
+                                  }}
+                                >
+                                  🗑️
+                                </Button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                ) : (
+                  <div className="border rounded-md p-8 text-center text-muted-foreground">
+                    <p className="text-sm mb-3">No features in this group yet</p>
+                    <Button variant="outline" size="sm" onClick={() => openCreateFeature(groupOverlay.id)}>Create First Feature</Button>
+                  </div>
+                )}
+              </section>
+
+              <section className="space-y-2">
+                <h3 className="font-medium text-foreground/80">Transform Table Details</h3>
+                <div className="border rounded-md p-3 bg-muted/20">
+                  <div className="text-xs">
+                    <div className="font-medium mb-2">{getTransformedTableById(metadata.transformedTables, groupOverlay.transformTableId)?.name || 'Unknown Table'}</div>
+                    <div className="text-muted-foreground">
+                      {(() => {
+                        const table = getTransformedTableById(metadata.transformedTables, groupOverlay.transformTableId);
+                        return table ? `${table.columns.length} columns available` : 'Table not found';
+                      })()}
+                    </div>
+                  </div>
+                </div>
+              </section>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Feature Overlay */}
       {featureOverlay && (
         <div className="fixed inset-0 z-50">
           <div className="absolute inset-0 bg-black/40 backdrop-blur-sm" onClick={() => setFeatureOverlay(null)} />
@@ -604,7 +1221,7 @@ export default function FeatureStore() {
             <div className="px-6 py-4 border-b flex items-center justify-between bg-muted/40">
               <div>
                 <h2 className="text-lg font-semibold">Feature: {featureOverlay.feature.name}</h2>
-                <p className="text-xs text-muted-foreground">Group: {featureOverlay.view}</p>
+                <p className="text-xs text-muted-foreground">Group: {featureOverlay.group.name}</p>
               </div>
               <button onClick={() => setFeatureOverlay(null)} className="p-2 rounded-md hover:bg-muted text-muted-foreground">Close</button>
             </div>
@@ -613,17 +1230,33 @@ export default function FeatureStore() {
                 <h3 className="font-medium text-foreground/80">Overview</h3>
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-xs">
                   <div><div className="text-muted-foreground">Name</div><div className="font-mono text-[11px]">{featureOverlay.feature.name}</div></div>
+                  <div><div className="text-muted-foreground">Mapped Column</div><div className="font-mono text-[11px]">{featureOverlay.feature.mapped_column}</div></div>
                   <div><div className="text-muted-foreground">Data Type</div><div className="font-medium">{featureOverlay.feature.dataType}</div></div>
-                  <div><div className="text-muted-foreground">Feature Type</div><div><span className={`inline-flex items-center rounded px-2 py-0.5 border text-[10px] ${featureOverlay.feature.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{featureOverlay.feature.featureType}</span></div></div>
+                  <div><div className="text-muted-foreground">Feature Type</div><div><span className={`inline-flex items-center rounded px-2 py-0.5 border text-[10px] ${featureOverlay.feature.featureType === 'Calculated' ? 'bg-blue-50 text-blue-700 border-blue-200' : featureOverlay.feature.featureType === 'Direct' ? 'bg-green-50 text-green-700 border-green-200' : 'bg-amber-50 text-amber-700 border-amber-200'}`}>{featureOverlay.feature.featureType}</span></div></div>
                 </div>
                 <div>
                   <div className="text-muted-foreground mb-1">Description</div>
                   <p className="text-xs leading-relaxed max-w-prose">{featureOverlay.feature.description}</p>
                 </div>
+                {featureOverlay.feature.transformation && (
+                  <div>
+                    <div className="text-muted-foreground mb-1">Transformation</div>
+                    <p className="text-xs leading-relaxed max-w-prose font-mono bg-muted/50 rounded px-2 py-1">{featureOverlay.feature.transformation}</p>
+                  </div>
+                )}
               </section>
               <section className="space-y-2">
-                <h3 className="font-medium text-foreground/80">Lineage (placeholder)</h3>
-                <div className="text-xs text-muted-foreground border rounded-md p-3">Lineage graph / SQL definition placeholder.</div>
+                <h3 className="font-medium text-foreground/80">Lineage</h3>
+                <div className="text-xs border rounded-md p-3">
+                  {featureOverlay.feature.transformation ? (
+                    <div className="space-y-2">
+                      <div className="text-muted-foreground">Source Transformation:</div>
+                      <div className="font-mono bg-muted/50 rounded px-2 py-1">{featureOverlay.feature.transformation}</div>
+                    </div>
+                  ) : (
+                    <div className="text-muted-foreground">No transformation defined for this feature.</div>
+                  )}
+                </div>
               </section>
               <section className="space-y-2">
                 <h3 className="font-medium text-foreground/80">Sample Values (placeholder)</h3>
@@ -635,6 +1268,54 @@ export default function FeatureStore() {
           </div>
         </div>
       )}
+
+      {/* Delete Feature Dialog */}
+      <AlertDialog open={!!showDeleteFeatureDialog} onOpenChange={() => setShowDeleteFeatureDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Feature</AlertDialogTitle>
+            <AlertDialogDescription>
+              {showDeleteFeatureDialog && (
+                <>
+                  Are you sure you want to delete the feature <strong>"{showDeleteFeatureDialog.feature.name}"</strong> from the group <strong>"{showDeleteFeatureDialog.group.name}"</strong>?
+                  <br /><br />
+                  This action cannot be undone and will permanently remove this feature and all its associated data.
+                </>
+              )}
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={handleDeleteFeature}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Feature
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
+
+      {/* Delete Group Dialog */}
+      <AlertDialog open={!!showDeleteGroupDialog} onOpenChange={() => setShowDeleteGroupDialog(null)}>
+        <AlertDialogContent>
+          <AlertDialogHeader>
+            <AlertDialogTitle>Delete Feature Group</AlertDialogTitle>
+            <AlertDialogDescription>
+              Are you sure you want to delete this feature group? This action cannot be undone and will remove all features in this group.
+            </AlertDialogDescription>
+          </AlertDialogHeader>
+          <AlertDialogFooter>
+            <AlertDialogCancel>Cancel</AlertDialogCancel>
+            <AlertDialogAction
+              onClick={() => showDeleteGroupDialog && handleDeleteGroup(showDeleteGroupDialog)}
+              className="bg-destructive text-destructive-foreground hover:bg-destructive/90"
+            >
+              Delete Group
+            </AlertDialogAction>
+          </AlertDialogFooter>
+        </AlertDialogContent>
+      </AlertDialog>
     </div>
   );
 }
