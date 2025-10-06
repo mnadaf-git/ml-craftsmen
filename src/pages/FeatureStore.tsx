@@ -22,6 +22,8 @@ import {
   addColumnToTable,
   updateColumnInTable,
   deleteColumnFromTable,
+  forceMetadataRefresh,
+  METADATA_VERSION,
   type MetadataStore,
   type FeatureGroup,
   type FeatureMeta,
@@ -61,7 +63,7 @@ export default function FeatureStore() {
     name: '',
     dataType: 'text' as 'text' | 'int' | 'float' | 'datetime',
     description: '',
-    featureType: 'Calculated' as 'Calculated' | 'Dynamic' | 'Direct',
+    featureType: 'Calculated' as 'Calculated' | 'Real Time' | 'Direct',
     mapped_column: '',
     transformationLogic: '',
     isDynamic: false,
@@ -79,6 +81,9 @@ export default function FeatureStore() {
   useEffect(() => {
     const loadData = async () => {
       try {
+        // Only clear temporary cache, preserves your actual feature data
+        forceMetadataRefresh();
+        console.log(`Loading metadata version ${METADATA_VERSION} - preserving your data`);
         const data = await loadMetadata();
         setMetadata(data);
       } catch (error) {
@@ -197,7 +202,7 @@ export default function FeatureStore() {
           name: featureForm.name.trim(),
           dataType: featureForm.dataType,
           description: featureForm.description.trim(),
-          featureType: (featureForm.isDynamic ? 'Dynamic' : 'Calculated') as 'Calculated' | 'Dynamic' | 'Direct',
+          featureType: (featureForm.isDynamic ? 'Real Time' : 'Calculated') as 'Calculated' | 'Real Time' | 'Direct',
           mapped_column: featureForm.mapped_column.trim(),
           transformationLogic: featureForm.transformationLogic.trim(),
           transformation: featureForm.transformationLogic.trim()
@@ -225,7 +230,7 @@ export default function FeatureStore() {
           name: featureForm.name.trim(),
           dataType: featureForm.dataType,
           description: featureForm.description.trim(),
-          featureType: (featureForm.isDynamic ? 'Dynamic' : 'Calculated') as 'Calculated' | 'Dynamic' | 'Direct',
+          featureType: (featureForm.isDynamic ? 'Real Time' : 'Calculated') as 'Calculated' | 'Real Time' | 'Direct',
           mapped_column: featureForm.mapped_column.trim(),
           transformationLogic: featureForm.transformationLogic.trim(),
           transformation: featureForm.transformationLogic.trim()
@@ -314,7 +319,7 @@ export default function FeatureStore() {
       featureType: feature.featureType || 'Calculated',
       mapped_column: feature.mapped_column,
       transformationLogic: feature.transformationLogic || '',
-      isDynamic: feature.featureType === 'Dynamic',
+      isDynamic: feature.featureType === 'Real Time',
       sourceTableId: '',
       transformationLanguage: 'SQL'
     });
@@ -346,7 +351,7 @@ export default function FeatureStore() {
 
     if (!featureForm.mapped_column) return false;
 
-    // Both calculated and dynamic features now require transformation logic
+    // Both calculated and real time features now require transformation logic
     if (!featureForm.transformationLogic.trim()) return false;
 
     // Validation is required for both types
@@ -566,7 +571,7 @@ export default function FeatureStore() {
           name: featureName,
           dataType: column.dataType,
           description: column.description || `Direct mapping from ${columnName}`,
-          featureType: 'Direct' as 'Calculated' | 'Dynamic' | 'Direct',
+          featureType: 'Direct' as 'Calculated' | 'Real Time' | 'Direct',
           transformation,
           mapped_column: columnName
         };
@@ -633,6 +638,19 @@ export default function FeatureStore() {
               className={`px-3 py-1 rounded-sm font-medium transition-colors ${viewMode === 'features' ? 'bg-background shadow-sm' : 'text-muted-foreground hover:text-foreground'}`}
             >Features</button>
           </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={async () => {
+              forceMetadataRefresh();
+              const data = await loadMetadata();
+              setMetadata(data);
+            }}
+            className="text-xs"
+            title="Refresh data display (preserves your features)"
+          >
+            Refresh Data
+          </Button>
           {viewMode === 'groups' && (
             <Dialog open={showCreateGroupDialog} onOpenChange={setShowCreateGroupDialog}>
               <DialogTrigger asChild>

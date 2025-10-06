@@ -1,6 +1,6 @@
 import { useState, useEffect } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowLeft, CheckSquare, Play, Database, Clock, X } from "lucide-react";
+import { ArrowLeft, CheckSquare, Play, Database, Clock, X, HelpCircle } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from "@/components/ui/card";
@@ -10,6 +10,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 // Textarea already imported above (keeping original import position compatibility)
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import { useToast } from "@/hooks/use-toast";
 import { loadMetadata, type MetadataStore } from "@/lib/metadata";
 import CreateFeatureDialog from "@/components/CreateFeatureDialog";
@@ -79,9 +80,9 @@ export default function NewExperiment() {
   const [sourceInstance] = useState(sourceInstanceParam);
   const [labelSourceTable, setLabelSourceTable] = useState('');
   const [targetLabelColumn, setTargetLabelColumn] = useState('');
+  const [eventTimestampColumn, setEventTimestampColumn] = useState('');
   const [filterCondition, setFilterCondition] = useState('');
   const [selectedFeatures, setSelectedFeatures] = useState<string[]>([]);
-  const [modelParameters, setModelParameters] = useState('');
   const [datasetGenerated, setDatasetGenerated] = useState(false);
   const [trainingSubmitted, setTrainingSubmitted] = useState(false);
   const [availableSelection, setAvailableSelection] = useState<string[]>([]);
@@ -162,28 +163,28 @@ export default function NewExperiment() {
   };
 
   const availableModels = selectedProject ? (mockModels[selectedProject] || []) : [];
-  
+
   // Get all features from metadata organized by feature groups
   const getAvailableFeaturesFromMetadata = () => {
     if (!metadata?.featureGroups) return [];
-    
+
     return metadata.featureGroups.map(group => ({
       groupId: group.id,
       groupName: group.name,
       features: group.features
     }));
   };
-  
+
   // Flatten all features from metadata
-  const allMetadataFeatures = metadata?.featureGroups?.flatMap(group => 
+  const allMetadataFeatures = metadata?.featureGroups?.flatMap(group =>
     group.features.map(feature => feature.name)
   ) || [];
-  
+
   const allFeatures = Array.from(new Set([
     ...allMetadataFeatures,
     ...customFeatures.map(f => f.name)
   ])).sort();
-  
+
   const availableFeatures = allFeatures.filter(f => !selectedFeatures.includes(f));
   const availableFeatureGroups = getAvailableFeaturesFromMetadata();
 
@@ -243,6 +244,7 @@ export default function NewExperiment() {
   }
 
   return (
+    <TooltipProvider>
     <>
     <div className="space-y-6">
       <div className="flex items-center gap-4">
@@ -265,7 +267,17 @@ export default function NewExperiment() {
           </CardHeader>
           <CardContent className="space-y-4">
             <div>
-              <Label>Project</Label>
+              <div className="flex items-center gap-2">
+                <Label>Project</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Select the ML project that contains your models and datasets</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select value={selectedProject} onValueChange={setSelectedProject} disabled={lockedProjectModel}>
                 <SelectTrigger><SelectValue placeholder="Select project" /></SelectTrigger>
                 <SelectContent>
@@ -274,7 +286,17 @@ export default function NewExperiment() {
               </Select>
             </div>
             <div>
-              <Label>Model</Label>
+              <div className="flex items-center gap-2">
+                <Label>Model</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Choose the specific ML algorithm/model to train for this experiment</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select value={selectedModel} onValueChange={setSelectedModel} disabled={!selectedProject || lockedProjectModel}>
                 <SelectTrigger><SelectValue placeholder="Select model" /></SelectTrigger>
                 <SelectContent>
@@ -283,11 +305,31 @@ export default function NewExperiment() {
               </Select>
             </div>
             <div>
-              <Label>Source Instance</Label>
+              <div className="flex items-center gap-2">
+                <Label>Source Instance</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">The data source instance or environment where your data is hosted</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Input value={sourceInstance || 'Not specified'} disabled readOnly className="bg-muted/50" />
             </div>
             <div>
-              <Label>Source Table</Label>
+              <div className="flex items-center gap-2">
+                <Label>Source Table</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Select the table containing your training data and target labels</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select value={labelSourceTable} onValueChange={v => { setLabelSourceTable(v); setTargetLabelColumn(''); }}>
                 <SelectTrigger><SelectValue placeholder="Select table" /></SelectTrigger>
                 <SelectContent>
@@ -298,7 +340,17 @@ export default function NewExperiment() {
               </Select>
             </div>
             <div>
-              <Label>Target Label Column</Label>
+              <div className="flex items-center gap-2">
+                <Label>Target Label Column</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">The column that contains the values you want to predict (dependent variable)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <Select value={targetLabelColumn} onValueChange={setTargetLabelColumn} disabled={!labelSourceTable}>
                 <SelectTrigger><SelectValue placeholder="Select target label column" /></SelectTrigger>
                 <SelectContent>
@@ -315,14 +367,47 @@ export default function NewExperiment() {
                 </SelectContent>
               </Select>
             </div>
-
             <div>
-              <Label>Filter Condition (optional)</Label>
-              <Input placeholder="e.g. amount > 100 AND credit_score > 650" value={filterCondition} onChange={e => setFilterCondition(e.target.value)} />
+              <div className="flex items-center gap-2">
+                <Label>Event Timestamp column</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Column containing timestamps for time-series analysis and temporal ordering</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Input placeholder="e.g. change_closed_datetime" value={eventTimestampColumn} onChange={e => setEventTimestampColumn(e.target.value)} />
+            </div>
+            <div>
+              <div className="flex items-center gap-2">
+                <Label>Filter Condition (optional)</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">SQL-like conditions to filter your dataset (e.g., "change_planned_start_date {'>'} 2024-01-01 AND status = 'open'")</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <Input placeholder="e.g. change_planned_start_date > 2024-01-01 AND status = 'open'" value={filterCondition} onChange={e => setFilterCondition(e.target.value)} />
             </div>
 
             <div className="space-y-2">
-              <Label>Features to Include</Label>
+              <div className="flex items-center gap-2">
+                <Label>Features to Include</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Select the input variables (features) that will be used to train your model</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
               <div className="grid md:grid-cols-3 gap-4">
                 <div className="border rounded-md p-3 h-64 flex flex-col">
                   <div className="font-medium text-sm mb-2">Available Features</div>
@@ -336,13 +421,13 @@ export default function NewExperiment() {
                           {group.features
                             .filter(feature => !selectedFeatures.includes(feature.name))
                             .map(feature => (
-                              <button 
-                                key={feature.id} 
-                                type="button" 
-                                onClick={() => toggleAvailable(feature.name)} 
+                              <button
+                                key={feature.id}
+                                type="button"
+                                onClick={() => toggleAvailable(feature.name)}
                                 className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${
-                                  availableSelection.includes(feature.name) 
-                                    ? 'bg-primary text-primary-foreground' 
+                                  availableSelection.includes(feature.name)
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'hover:bg-muted'
                                 }`}
                                 title={feature.description}
@@ -365,13 +450,13 @@ export default function NewExperiment() {
                           {customFeatures
                             .filter(feature => !selectedFeatures.includes(feature.name))
                             .map(feature => (
-                              <button 
-                                key={feature.id || feature.name} 
-                                type="button" 
-                                onClick={() => toggleAvailable(feature.name)} 
+                              <button
+                                key={feature.id || feature.name}
+                                type="button"
+                                onClick={() => toggleAvailable(feature.name)}
                                 className={`w-full text-left px-2 py-1 rounded border text-xs transition-colors ${
-                                  availableSelection.includes(feature.name) 
-                                    ? 'bg-primary text-primary-foreground' 
+                                  availableSelection.includes(feature.name)
+                                    ? 'bg-primary text-primary-foreground'
                                     : 'hover:bg-muted'
                                 }`}
                                 title={feature.description}
@@ -417,7 +502,7 @@ export default function NewExperiment() {
                 />
                 <Button
                   size="sm"
-                  variant="outline"
+                  variant="default"
                   className="h-8 text-xs"
                   onClick={() => setCreateFeatureOpen(true)}
                 >
@@ -431,8 +516,53 @@ export default function NewExperiment() {
             </div>
 
             <div>
-              <Label>Model Parameters (JSON/YAML)</Label>
-              <Textarea placeholder='{"learning_rate": 0.1, "max_depth": 6}' value={modelParameters} onChange={e => setModelParameters(e.target.value)} className="font-mono text-xs min-h-[100px]" />
+              <div className="flex items-center gap-2">
+                <Label>Model Parameters</Label>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <HelpCircle className="h-3 w-3 text-muted-foreground cursor-help" />
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p className="text-xs">Configure hyperparameters that control how the model learns and performs</p>
+                  </TooltipContent>
+                </Tooltip>
+              </div>
+              <div className="border rounded-md p-3 max-h-[120px] overflow-y-auto bg-muted/50">
+                <div className="grid grid-cols-2 gap-3 text-sm">
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">num_topics</div>
+                    <Input defaultValue="10" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">workers</div>
+                    <Input defaultValue="2" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">chunksize</div>
+                    <Input defaultValue="2000" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">passes</div>
+                    <Input defaultValue="1" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">batch</div>
+                    <Input defaultValue="10" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">alpha</div>
+                    <Input defaultValue="2" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">decay</div>
+                    <Input defaultValue="2000" className="h-7 text-xs font-mono" />
+                  </div>
+                  <div className="space-y-1">
+                    <div className="text-xs font-medium text-muted-foreground">offset</div>
+                    <Input defaultValue="1" className="h-7 text-xs font-mono" />
+                  </div>
+                </div>
+              </div>
             </div>
             <div className="pt-2">
               <Button onClick={handleGenerateDataset} size="lg" className="w-full" disabled={!selectedProject || !selectedModel || !labelSourceTable || !targetLabelColumn || !selectedFeatures.length}>
@@ -659,5 +789,6 @@ export default function NewExperiment() {
       </div>
     )}
     </>
+    </TooltipProvider>
   );
 }

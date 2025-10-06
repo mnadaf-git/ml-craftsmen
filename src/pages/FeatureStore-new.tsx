@@ -42,7 +42,7 @@ export default function FeatureStore() {
     name: '',
     dataType: 'text' as 'text' | 'int' | 'float' | 'datetime',
     description: '',
-    featureType: 'Calculated' as 'Calculated' | 'Dynamic',
+    featureType: 'Calculated' as 'Calculated' | 'Real Time',
     mapped_column: '',
     transformationLogic: ''
   });
@@ -106,7 +106,7 @@ export default function FeatureStore() {
       description: featureForm.description.trim(),
       featureType: featureForm.featureType,
       mapped_column: featureForm.mapped_column.trim(),
-      transformationLogic: featureForm.featureType === 'Dynamic' ? featureForm.transformationLogic.trim() : undefined
+      transformationLogic: featureForm.featureType === 'Real Time' ? featureForm.transformationLogic.trim() : undefined
     });
 
     setMetadata(updatedMetadata);
@@ -126,7 +126,7 @@ export default function FeatureStore() {
 
     if (sourceColumnChoice === 'create-new' && !featureForm.mapped_column) return false;
 
-    if (featureForm.featureType === 'Dynamic') {
+    if (featureForm.featureType === 'Real Time') {
       return featureForm.transformationLogic.trim().length > 0 && logicValidated && !logicError;
     }
     return true;
@@ -533,12 +533,12 @@ export default function FeatureStore() {
                   <SelectTrigger className="h-8 text-xs"><SelectValue /></SelectTrigger>
                   <SelectContent>
                     <SelectItem value="Calculated">Calculated</SelectItem>
-                    <SelectItem value="Dynamic">Dynamic</SelectItem>
+                    <SelectItem value="Real Time">Real Time</SelectItem>
                   </SelectContent>
                 </Select>
               </div>
             </div>
-            {featureForm.featureType === 'Dynamic' && (
+            {featureForm.featureType === 'Real Time' && (
               <div className="space-y-1">
                 <label className="text-xs font-medium flex items-center justify-between">Transformation Logic (Python)
                   {logicValidated && !logicError && <span className="text-[10px] text-green-600">Validated</span>}

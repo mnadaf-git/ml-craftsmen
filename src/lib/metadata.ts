@@ -1,7 +1,11 @@
 // Metadata management system for ML Craftsmen
 // Now with persistent file-based storage and database migration support
+// Version: 2.0.0 - Updated Dynamic to Real Time feature types
 
 import { storageManager } from './storage';
+
+// Metadata version for cache busting
+export const METADATA_VERSION = '2.0.0';
 
 export interface ColumnMeta {
   name: string;
@@ -23,7 +27,7 @@ export interface FeatureMeta {
   name: string;
   dataType: 'int' | 'float' | 'datetime' | 'text';
   description: string;
-  featureType: 'Calculated' | 'Dynamic' | 'Direct';
+  featureType: 'Calculated' | 'Real Time' | 'Direct';
   transformationLogic?: string;
   transformation?: string; // New field for tracking transformation details
   mapped_column: string;
@@ -104,7 +108,7 @@ const getInitialData = (): MetadataStore => ({
           name: 'Change Lead Duration',
           dataType: 'int',
           description: 'Lead time for change request planned start date',
-          featureType: 'Dynamic',
+          featureType: 'Real Time',
           mapped_column: 'change_lead_duration',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -124,7 +128,7 @@ const getInitialData = (): MetadataStore => ({
           name: 'Approved Planned Leadtime',
           dataType: 'int',
           description: 'Lead time for change implementation from approval date',
-          featureType: 'Dynamic',
+          featureType: 'Real Time',
           mapped_column: 'approved_planned_leadtime',
           createdAt: new Date().toISOString(),
           updatedAt: new Date().toISOString()
@@ -452,4 +456,18 @@ export const deleteColumnFromTable = async (data: MetadataStore, tableId: string
 
   await saveMetadata(updatedData);
   return updatedData;
+};
+
+// Force fresh metadata load without clearing stored data
+export const forceMetadataRefresh = (): void => {
+  // Only clear browser cache keys that might hold onto old in-memory references
+  // This does NOT clear your actual stored feature data
+  if (typeof window !== 'undefined') {
+    // Clear only temporary cache keys, not persistent storage
+    Object.keys(sessionStorage).forEach(key => {
+      if (key.startsWith('temp_metadata_cache_')) {
+        sessionStorage.removeItem(key);
+      }
+    });
+  }
 };

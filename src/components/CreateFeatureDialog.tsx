@@ -55,7 +55,7 @@ export default function CreateFeatureDialog({
     name: '',
     dataType: 'text' as 'text' | 'int' | 'float' | 'datetime',
     description: '',
-    featureType: 'Calculated' as 'Calculated' | 'Dynamic' | 'Direct',
+    featureType: 'Calculated' as 'Calculated' | 'Real Time' | 'Direct',
     mapped_column: '',
     transformationLogic: '',
     isDynamic: false,
@@ -158,7 +158,7 @@ export default function CreateFeatureDialog({
 
   const isFeatureValid = (): boolean => {
     if (!(featureForm.name && featureForm.dataType && featureForm.description)) return false;
-    if ((featureForm.isDynamic || featureForm.featureType === 'Dynamic') && !featureForm.transformationLogic.trim()) return false;
+    if ((featureForm.isDynamic || featureForm.featureType === 'Real Time') && !featureForm.transformationLogic.trim()) return false;
     return true;
   };
 
@@ -184,7 +184,7 @@ export default function CreateFeatureDialog({
         name: featureForm.name.trim(),
         dataType: featureForm.dataType,
         description: featureForm.description.trim(),
-        featureType: (featureForm.isDynamic ? 'Dynamic' : 'Calculated') as 'Calculated' | 'Dynamic' | 'Direct',
+        featureType: (featureForm.isDynamic ? 'Real Time' : 'Calculated') as 'Calculated' | 'Real Time' | 'Direct',
         mapped_column: featureForm.mapped_column.trim(),
         transformationLogic: featureForm.transformationLogic.trim(),
         transformation: featureForm.transformationLogic.trim()
@@ -258,7 +258,7 @@ export default function CreateFeatureDialog({
           name: featureName,
           dataType: column.dataType,
           description: column.description || `Direct mapping from ${columnName}`,
-          featureType: 'Direct' as 'Calculated' | 'Dynamic' | 'Direct',
+          featureType: 'Direct' as 'Calculated' | 'Real Time' | 'Direct',
           transformation,
           mapped_column: columnName
         };
@@ -470,7 +470,7 @@ export default function CreateFeatureDialog({
                     setFeatureForm(f => ({
                       ...f,
                       isDynamic: isChecked,
-                      featureType: isChecked ? 'Dynamic' : 'Calculated',
+                      featureType: isChecked ? 'Real Time' : 'Calculated',
                       transformationLogic: isChecked ? f.transformationLogic : ''
                     }));
                     setLogicValidated(false);
@@ -478,10 +478,10 @@ export default function CreateFeatureDialog({
                   }}
                 />
                 <label htmlFor="dynamic" className="text-xs font-medium cursor-pointer">
-                  Dynamic
+                  Real Time
                 </label>
                 <span className="text-xs text-muted-foreground ml-2">
-                  {featureForm.isDynamic === true ? 'Dynamic feature with custom logic' : 'Calculated feature'}
+                  {featureForm.isDynamic === true ? 'Real Time feature with custom logic' : 'Calculated feature'}
                 </span>
               </div>
 
